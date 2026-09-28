@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="mn">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Алдаа шалгагч</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand__logo" aria-hidden="true">
+          <svg class="ic ic--20" viewBox="0 0 24 24"><path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z" /><path d="M16 8 2 22" /><path d="M17.5 15H9" /></svg>
+        </span>
+        <div class="brand__text">
+          <h1 class="brand__title">Алдаа шалгагч</h1>
+          <p class="brand__sub">Монгол хэлний зөв бичгийн шалгагч</p>
+        </div>
+      </div>
+
+      <nav class="perks" aria-label="Давуу талууд">
+        <span class="perk">
+          <svg class="ic" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+          Текст таны компьютерээс гардаггүй
+        </span>
+        <span class="perk">
+          <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><path d="m4.9 4.9 14.2 14.2" /></svg>
+          Бүртгэл шаардлагагүй
+        </span>
+        <span class="perk">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 0 0 0-8c-2 0-4 1.33-6 4Z" /></svg>
+          Хязгааргүй
+        </span>
+        <span class="popwrap">
+          <button type="button" class="perk perk--btn" id="settings-btn" aria-haspopup="true" aria-expanded="false">
+            <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" /></svg>
+            Тохиргоо
+          </button>
+          <div class="menu" id="settings-menu" hidden>
+            <label class="menu__item menu__item--label">
+              <input type="checkbox" id="theme-toggle" />
+              Харанхуй горим
+            </label>
+            <button type="button" class="menu__item" id="clear-dict">Тольд нэмсэн үгсийг цэвэрлэх</button>
+          </div>
+        </span>
+      </nav>
+    </header>
+
+    <main class="layout">
+      <section class="editor" aria-label="Текст засварлагч">
+        <div class="toolbar">
+          <span class="popwrap">
+            <button type="button" class="tool-btn" id="samples-btn" aria-haspopup="true" aria-expanded="false">
+              Жишээ текст
+              <svg class="ic ic--14" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></svg>
+            </button>
+            <div class="menu" id="samples-menu" hidden></div>
+          </span>
+
+          <div class="history" role="group" aria-label="Түүх">
+            <button type="button" class="iconbtn" id="undo-btn" title="Буцаах" aria-label="Буцаах" disabled>
+              <svg class="ic" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></svg>
+            </button>
+            <button type="button" class="iconbtn" id="redo-btn" title="Дахин хийх" aria-label="Дахин хийх" disabled>
+              <svg class="ic" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5" /><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" /></svg>
+            </button>
+          </div>
+
+          <div class="stats" aria-live="polite">
+            <span id="stat-words">0 үг</span>
+            <span class="stats__sep">|</span>
+            <span id="stat-chars">0 тэмдэгт</span>
+            <span class="stats__sep">|</span>
+            <span id="stat-sentences">0 өгүүлбэр</span>
+            <span class="stats__sep">|</span>
+            <span id="stat-reading">~0 мин</span>
+          </div>
+
+          <button type="button" class="tool-btn tool-btn--ghost" id="copy-all-btn" title="Бүх текстийг хуулах">
+            <svg class="ic ic--16" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            Хуулах
+          </button>
+          <button type="button" class="tool-btn tool-btn--ghost" id="download-btn" title="Файлаар татах (.txt)">
+            <svg class="ic ic--16" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Татах
+          </button>
+          <button type="button" class="tool-btn tool-btn--ghost" id="clear-btn">
+            <svg class="ic ic--16" viewBox="0 0 24 24"><path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M10 11v6" /><path d="M14 11v6" /></svg>
+            Цэвэрлэх
+          </button>
+        </div>
+
+        <div class="pad" id="pad">
+          <div class="pad__marks" id="backdrop" aria-hidden="true"></div>
+          <textarea
+            id="text"
+            rows="1"
+            spellcheck="false"
+            autocomplete="off"
+            autocapitalize="off"
+            aria-label="Шалгах текст"
+            placeholder="Энд монгол үгсээ бичээд, алдаагаа шалгаарай. Эсвэл доорх талбарт файл чирж оруулаарай."
+          ></textarea>
+        </div>
+
+        <div class="actions">
+          <label class="dropzone" id="dropzone">
+            <svg class="ic ic--20" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></svg>
+            <span class="dropzone__text">.txt, .docx файлыг чирж оруулах</span>
+            <input type="file" id="file-input" accept=".txt,.docx,text/plain" hidden />
+          </label>
+
+          <div class="actions__btns">
+            <button type="button" class="btn" id="sample-btn">
+              <svg class="ic ic--16" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></svg>
+              Жишээ текст
+            </button>
+            <button type="button" class="btn btn--primary" id="check-btn">
+              <svg class="ic ic--16" viewBox="0 0 24 24"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z" /></svg>
+              Алдаа шалгах
+            </button>
+          </div>
+        </div>
+
+        <p class="status" id="status" role="status"></p>
+      </section>
+
+      <aside class="side" aria-label="Алдааны жагсаалт">
+        <div class="tabs" role="tablist" aria-label="Үзүүлэх хэсэг">
+          <button type="button" class="tab is-active" id="tab-sugs" role="tab" aria-selected="true" aria-controls="cards">
+            <svg class="ic ic--16" viewBox="0 0 24 24"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z" /></svg>
+            Санал (<span id="sugs-count">0</span>)
+          </button>
+          <button type="button" class="tab" id="tab-all" role="tab" aria-selected="false" aria-controls="all-list">
+            <svg class="ic ic--16" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
+            Бүх алдаа (<span id="all-count">0</span>)
+          </button>
+        </div>
+
+        <div class="side__bar" id="side-bar" hidden>
+          <span class="side__bar-label">Эхний саналаар засах</span>
+          <button type="button" class="btn btn--sm btn--primary" id="fix-all-btn">Бүгдийг засах</button>
+        </div>
+
+        <div class="side__body">
+          <div class="cards" id="cards" role="tabpanel" aria-labelledby="tab-sugs"></div>
+          <div class="alllist" id="all-list" role="tabpanel" aria-labelledby="tab-all" hidden></div>
+          <div class="empty" id="empty">
+            <p class="empty__title" id="empty-title">Текст бичнэ үү</p>
+            <p class="empty__sub" id="empty-sub">Эсвэл жишээ текст сонгоорой.</p>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
+
+

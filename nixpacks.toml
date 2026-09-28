@@ -1,0 +1,16 @@
+# Dokploy / Nixpacks build + start for spellcheck-mn-local.
+# Nixpacks file docs: https://nixpacks.com/docs/configuration/file
+
+[variables]
+NIXPACKS_NODE_VERSION = "22"
+
+# Production-only install: skips the Playwright dev dependency (its browser
+# download would bloat or break the image build). The root postinstall
+# (scripts/patch-nanoid.cjs) still runs and only needs prod deps.
+[phases.install]
+cmds = ["npm ci --omit=dev --no-audit --no-fund"]
+
+# Exec node directly instead of `npm start` so SIGTERM reaches the server's
+# graceful-shutdown handler (no npm wrapper process in between).
+[start]
+cmd = "node server.js"

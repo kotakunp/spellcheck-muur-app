@@ -1,0 +1,29 @@
+# Valid Mongolian words and inflected forms missing from dict-mn.
+# One lowercase word per line; blank lines and # comments ignored.
+#
+# IMPORTANT: Only add words that are strictly compliant with standard
+# Mongolian Cyrillic orthography. Erroneous words here will suppress spellcheck
+# warnings and mislead the suggestion engine.
+
+# Postpositions
+руу
+рүү
+
+# Common modern loanwords and inflections missing from dict-mn
+компьютертэй
+компьютерийн
+компьютерээр
+компьютерүүд
+компьютерүүдийг
+апп
+аппууд
+аппликейшн
+вэб
+вэбсайт
+вэбсайтын
+интернэт
+интернэтэд
+чат
+чатаар
+постууд
+сошиал

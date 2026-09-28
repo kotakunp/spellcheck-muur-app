@@ -1,0 +1,25 @@
+{
+  "name": "spellcheck-mn-local",
+  "version": "1.0.0",
+  "description": "Private drop-in replacement for spellcheck.mn: web UI + check/suggest API (Hunspell + dict-mn, no rate limits)",
+  "scripts": {
+    "test": "node test.mjs",
+    "start": "node server.js",
+    "postinstall": "node scripts/patch-nanoid.cjs",
+    "ui": "node scripts/ui-check.mjs"
+  },
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "hunspell-asm": "^4.0.2"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "overrides": {
+    "nanoid": "^3.3.18"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
+  }
+}
