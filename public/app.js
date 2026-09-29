@@ -8,7 +8,7 @@ const statCharsEl = document.getElementById("stat-chars");
 const statSentencesEl = document.getElementById("stat-sentences");
 const errCountEl = document.getElementById("err-count");
 const copyAllBtn = document.getElementById("copy-all-btn");
-const downloadBtn = document.getElementById("download-btn");
+const pasteBtn = document.getElementById("paste-btn");
 const clearBtn = document.getElementById("clear-btn");
 const undoBtn = document.getElementById("undo-btn");
 const redoBtn = document.getElementById("redo-btn");
@@ -142,6 +142,8 @@ function paint() {
   } else {
     errCountEl.hidden = true;
   }
+  // The panel lists the same words the marks do, so one repaint updates both.
+  renderHistory();
 }
 
 function markAt(x, y) {
@@ -246,10 +248,55 @@ function buildHistoryEntry(entry) {
   return row;
 }
 
+// How many times a word is highlighted in the text right now.
+function occurrenceCount(word) {
+  const key = word.toLowerCase();
+  let n = 0;
+  for (const mark of marksEl.querySelectorAll("mark")) {
+    if (mark.dataset.word.toLowerCase() === key) n++;
+  }
+  return n;
+}
+
+// A still-wrong word: click it to jump to the first occurrence.
+function buildErrorRow(word) {
+  const row = document.createElement("button");
+  row.type = "button";
+  row.className = "errrow";
+  row.dataset.word = word;
+  row.title = "Текст дэх үсгийг руу очих";
+  const label = document.createElement("span");
+  label.className = "errrow__word";
+  label.textContent = word;
+  row.append(label);
+  const n = occurrenceCount(word);
+  if (n > 1) {
+    const count = document.createElement("span");
+    count.className = "errrow__count";
+    count.textContent = `×${n}`;
+    row.append(count);
+  }
+  return row;
+}
+
+// The panel is one list: words that are still wrong first, then what each
+// replaced word became.
 function renderHistory() {
   historyListEl.textContent = "";
-  emptyEl.hidden = replaceLog.length > 0;
-  for (const entry of replaceLog) historyListEl.prepend(buildHistoryEntry(entry));
+  emptyEl.hidden = misspellings.length > 0 || replaceLog.length > 0;
+  for (const word of misspellings) historyListEl.append(buildErrorRow(word));
+  for (let i = replaceLog.length - 1; i >= 0; i--) historyListEl.append(buildHistoryEntry(replaceLog[i]));
+}
+
+// Clicking a still-wrong word scrolls to it and pulses every occurrence.
+function focusWord(word) {
+  const key = word.toLowerCase();
+  const mark = [...marksEl.querySelectorAll("mark")].find((el) => el.dataset.word.toLowerCase() === key);
+  if (!mark) return;
+  mark.scrollIntoView({ block: "center" });
+  setHoverHighlight(word);
+  textEl.focus();
+  setTimeout(() => setHoverHighlight(null), 1500);
 }
 // ===== Suggestions =====
 // Suggestions are fetched ONLY when the user explicitly runs the checker
@@ -316,10 +363,14 @@ function replaceWord(word, suggestion) {
   commitHistory();
   textEl.value = out + value.slice(cursor);
   commitHistory();
-  logReplacement(word, suggestion, count);
-  setStatus(`«${word}» → «${suggestion}»${count > 1 ? ` (${count} удаа)` : ""} солигдлоо.`);
+  // The word is fixed now, so drop it from the live list immediately instead of
+  // waiting for the re-check — the panel and the pill update in the same frame.
+  misspellings = misspellings.filter((item) => item.toLowerCase() !== key);
   fit();
   updateStats();
+  paint();
+  logReplacement(word, suggestion, count);
+  setStatus(`«${word}» → «${suggestion}»${count > 1 ? ` (${count} удаа)` : ""} солигдлоо.`);
   scheduleCheck();
   textEl.focus();
 }
@@ -357,19 +408,30 @@ async function copyAll() {
   }
 }
 
-function downloadText() {
-  const value = textEl.value;
-  if (!value) return;
-  const blob = new Blob([value], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "shalgasan-text.txt";
-  document.body.append(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-  setStatus("Текстийг файл болгон татлаа.");
+// Paste lands at the caret (replacing any selection) rather than wiping the
+// box, so it can be used mid-sentence.
+async function pasteFromClipboard() {
+  let text;
+  try {
+    text = await navigator.clipboard.readText();
+  } catch {
+    setStatus("Хувийн ойг уншиж чадсангүй. ⌘/Ctrl + V дараад бичнэ үү.", "error");
+    return;
+  }
+  if (!text) {
+    setStatus("Хувийн ойн хоосон байна.");
+    return;
+  }
+  const start = textEl.selectionStart ?? textEl.value.length;
+  const end = textEl.selectionEnd ?? start;
+  commitHistory();
+  textEl.setRangeText(text, start, end, "end");
+  commitHistory();
+  setStatus("Хувийн ойноос буулгалаа.");
+  fit();
+  updateStats();
+  runCheck();
+  textEl.focus();
 }
 
 // ===== Case tools =====
@@ -743,7 +805,11 @@ hoverCardEl.addEventListener("click", (event) => {
 });
 
 if (copyAllBtn) copyAllBtn.addEventListener("click", copyAll);
-if (downloadBtn) downloadBtn.addEventListener("click", downloadText);
+if (pasteBtn) pasteBtn.addEventListener("click", pasteFromClipboard);
+historyListEl.addEventListener("click", (event) => {
+  const row = event.target.closest(".errrow");
+  if (row) focusWord(row.dataset.word);
+});
 
 clearBtn.addEventListener("click", () => {
   commitHistory();
@@ -793,7 +859,7 @@ clearDictBtn.addEventListener("click", () => {
 clearHistoryBtn.addEventListener("click", () => {
   replaceLog = [];
   renderHistory();
-  setStatus("Солилтын түүхийг цэвэрлэлээ.");
+  setStatus("Зассан үгсийн түүхийг цэвэрлэлээ.");
 });
 
 window.addEventListener("resize", () => {

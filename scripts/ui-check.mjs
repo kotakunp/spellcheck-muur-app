@@ -63,10 +63,23 @@ async function hoverMark(locator) {
   await page.locator("#hover-card").waitFor({ state: "visible", timeout: 6000 });
 }
 
+// paint() only runs once the 400ms debounced check comes back. A plain
+// waitForSelector(".pad__marks mark") passes on the *previous* text's marks, so
+// wait until the painted backdrop actually matches the textarea.
+const waitForFreshMarks = () =>
+  page.waitForFunction(
+    () => document.getElementById("backdrop").textContent.replace(/\n$/, "") === document.getElementById("text").value,
+    null,
+    { timeout: 10000 }
+  );
+
 async function hoverFirstMark() {
-  await page.waitForSelector(".pad__marks mark", { timeout: 8000 });
+  await waitForFreshMarks();
   await hoverMark(page.locator(".pad__marks mark").first());
   await page.waitForSelector("#hover-card .rank__item", { timeout: 8000 });
+  // The candidates fade in and the card grows to fit them, so let that finish
+  // before anything tries to click a row.
+  await page.waitForTimeout(450);
 }
 
 const pickRank = (n = 1) => page.locator("#hover-card .rank__item").nth(n - 1).click();
@@ -92,8 +105,9 @@ check("nav CTA scrolls the app into view", await page.evaluate(() => {
 
 // ===== Empty state: no cards anywhere, replacement history empty =====
 check("empty state visible", await page.locator("#empty").isVisible());
-check("empty title names the history", (await page.locator("#empty-title").textContent()) === "Солилтын түүх хоосон");
-check("history list empty at start", (await page.locator("#history-list .histentry").count()) === 0);
+check("empty title names the panel", (await page.locator("#empty-title").textContent()) === "Алдаа олдсонгүй");
+check("panel is titled Алдаатай үгс", (await page.locator(".side__title").textContent()) === "Алдаатай үгс");
+check("panel list empty at start", (await page.locator("#history-list .histentry, #history-list .errrow").count()) === 0);
 check("no card elements exist anymore", (await page.locator(".card, #cards, #all-list, .tabs").count()) === 0);
 check("no marks at start", (await page.locator(".pad__marks mark").count()) === 0);
 check("undo disabled at start", await page.locator("#undo-btn").isDisabled());
@@ -122,6 +136,30 @@ const tintedCount = await page.evaluate(() =>
 check("all misspellings are tinted at once", tintedCount === marks.length, { tintedCount, marks: marks.length });
 check("hover card hidden until hovered", await page.locator("#hover-card").isHidden());
 await shot("02-flagged.png");
+
+// ===== The panel lists wrong words, then what they became =====
+check("panel lists every flagged word", (await page.locator("#history-list .errrow").count()) === 3, await page.locator("#history-list .errrow").count());
+const panelWords = await page.locator("#history-list .errrow__word").allTextContents();
+check("panel words are the flagged words", ["Уланбаатар", "хүүнтэй", "тээвэрээр"].every((w) => panelWords.includes(w)), panelWords);
+check("no replacement rows before anything is fixed", (await page.locator("#history-list .histentry").count()) === 0);
+check("panel hides the empty state while words are wrong", await page.locator("#empty").isHidden());
+
+// Clicking a word jumps to it in the text.
+await page.locator("#history-list .errrow").first().click();
+await page.waitForTimeout(200);
+check("clicking a word highlights it in the text", (await page.locator(".pad__marks mark.is-hover").count()) >= 1);
+check("clicking a word focuses the editor", await page.evaluate(() => document.activeElement?.id === "text"));
+
+// Repeated words get one row with an occurrence badge, not two rows.
+await page.locator("#clear-btn").click();
+await page.locator("#text").fill("Уланбаатар хот. Уланбаатар руу.");
+await waitForFreshMarks();
+check("repeated word shows one row, not two", (await page.locator("#history-list .errrow").count()) === 1, await page.locator("#history-list .errrow").count());
+check("repeated word shows its occurrence count", (await page.locator("#history-list .errrow__count").first().textContent()) === "×2");
+await page.locator("#clear-btn").click();
+await page.locator("#text").fill(SAMPLE_TEXT);
+await waitForFreshMarks();
+await page.mouse.move(4, 4);
 
 // ===== Hover fetches its own candidates, one request per word =====
 const typo = "Уланбаатар";
@@ -323,26 +361,41 @@ await page.keyboard.press("ControlOrMeta+Enter");
 await page.waitForTimeout(800);
 check("clean text reports no errors", /Алдаа олдсонгүй/.test(await page.locator("#status").textContent()), await page.locator("#status").textContent());
 
-// ===== Replacement history clears on demand =====
-await page.locator("#text").fill("Энд улаанбатар гэсэн алдаа байна.");
+// ===== The panel turns a wrong word into "wrong → right" =====
+await page.locator("#clear-btn").click();
+await page.locator("#clear-history").click();
+await page.locator("#text").fill("Уланбаатар болон хүүнтэй гэж бичсэн.");
+await waitForFreshMarks();
+check("panel lists both wrong words", (await page.locator("#history-list .errrow").count()) === 2, await page.locator("#history-list .errrow").count());
 await hoverFirstMark();
 await pickRank(1);
 await page.waitForTimeout(900);
-check("replacement adds a history entry", (await page.locator("#history-list .histentry").count()) === 1);
+const loggedFrom = await page.locator("#history-list .histentry__from").first().textContent();
+check("the fix is logged as a wrong → right row", (await page.locator("#history-list .histentry").count()) === 1, await page.locator("#history-list .histentry").count());
+check("the logged row names the old word", loggedFrom.length > 0, loggedFrom);
+check("the logged row names the new word", (await page.locator("#history-list .histentry__to").first().textContent()).length > 0);
+check("only the untouched wrong word is left", (await page.locator("#history-list .errrow").count()) === 1, await page.locator("#history-list .errrow").count());
+check("the fixed word left the wrong-word list", !(await page.locator("#history-list .errrow__word").allTextContents()).includes(loggedFrom));
+
+// Clearing the log wipes the wrong → right rows but keeps the wrong words.
 await page.locator("#clear-history").click();
 await page.waitForTimeout(200);
-check("history clear button empties the list", (await page.locator("#history-list .histentry").count()) === 0);
-check("history clear restores the empty state", await page.locator("#empty").isVisible());
+check("clearing the log removes the wrong → right rows", (await page.locator("#history-list .histentry").count()) === 0);
+check("clearing the log keeps the still-wrong word", (await page.locator("#history-list .errrow").count()) === 1, await page.locator("#history-list .errrow").count());
+check("empty state stays hidden while a wrong word remains", await page.locator("#empty").isHidden());
 check("history clear reports in the status", /цэвэрлэлээ/.test(await page.locator("#status").textContent()));
+
+
 
 // ===== Typing triggers automatic checking =====
 await page.locator("#text").fill("Энэ өгүүлбэрт улаанбатар гэсэн алдаа байна.");
-await page.waitForSelector(".pad__marks mark", { timeout: 8000 });
+await waitForFreshMarks();
 check("typing auto-checks the text", (await page.locator(".pad__marks mark").count()) > 0);
 const typedWord = await page.locator(".pad__marks mark").first().textContent();
 await hoverFirstMark();
 const typedBest = await page.locator("#hover-card .rank__word").first().textContent();
 check("hovering offers ranked candidates", typedBest.length > 0 && typedBest.toLowerCase() !== typedWord.toLowerCase(), { typedWord, typedBest });
+check("no candidate is a no-op for the word", (await page.locator("#hover-card .rank__word").allTextContents()).every((w) => w.toLowerCase() !== typedWord.toLowerCase()), await page.locator("#hover-card .rank__word").allTextContents());
 await pickRank(1);
 await page.waitForTimeout(900);
 const typedFixed = await textValue();
@@ -466,10 +519,37 @@ await page.locator("#undo-btn").click();
 await page.waitForTimeout(900);
 check("case transform is undoable", (await textValue()) === "сайн байна уу? би монгол хэлээр ярьдаг.");
 
-// ===== Stats / copy / download =====
+// ===== Stats / copy / paste / clear =====
 check("sentences stat visible", /өгүүлбэр/.test(await page.locator("#stat-sentences").textContent()));
-check("copy all button visible", await page.locator("#copy-all-btn").isVisible());
-check("download button visible", await page.locator("#download-btn").isVisible());
+check("copy button visible", await page.locator("#copy-all-btn").isVisible());
+check("paste button visible", await page.locator("#paste-btn").isVisible());
+check("clear button visible", await page.locator("#clear-btn").isVisible());
+check("the three actions are icon buttons", (await page.locator(".toolgroup .iconbtn").count()) === 3);
+check("the three actions sit at the top right", await page.evaluate(() => {
+  const g = document.querySelector(".toolgroup").getBoundingClientRect();
+  const t = document.querySelector(".toolbar").getBoundingClientRect();
+  return g.right >= t.right - 12 && g.top <= t.top + 12;
+}));
+check("download feature is gone", (await page.locator("#download-btn").count()) === 0);
+check("no download text anywhere in the app", (await page.locator("#app").textContent()).includes("Татах") === false);
+
+// Paste inserts at the caret instead of replacing the whole document.
+await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+await page.evaluate(() => navigator.clipboard.writeText(" Уланбаатар гэж бичсэн."));
+await page.locator("#text").fill("Эхний өгүүлбэр.");
+await page.locator("#text").evaluate((el) => {
+  el.focus();
+  el.setSelectionRange(el.value.length, el.value.length);
+});
+await page.locator("#paste-btn").click();
+await page.waitForTimeout(700);
+const pasted = await textValue();
+check("paste inserts at the caret", pasted === "Эхний өгүүлбэр. Уланбаатар гэж бичсэн.", pasted);
+check("paste keeps the existing text", pasted.startsWith("Эхний өгүүлбэр."), pasted);
+check("pasted text is checked", (await page.locator(".pad__marks mark").count()) > 0, await page.locator(".pad__marks mark").allTextContents());
+check("pasted text lands in the panel", (await page.locator("#history-list .errrow").count()) > 0);
+check("paste reports in the status", /буулгалаа/.test(await page.locator("#status").textContent()), await page.locator("#status").textContent());
+check("paste is undoable", await page.locator("#undo-btn").isEnabled());
 
 // ===== Landing sections reveal on scroll =====
 await page.locator("#features").scrollIntoViewIfNeeded();
@@ -498,7 +578,7 @@ await page.waitForTimeout(400);
 const noHorizontalScroll = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
 check("no horizontal overflow on mobile", noHorizontalScroll, await page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]));
 check("sidebar visible on mobile", await page.locator(".side").isVisible());
-check("history stays visible on mobile", (await page.locator("#history-list .histentry").count()) > 0);
+check("error panel stays visible on mobile", (await page.locator("#history-list .errrow, #history-list .histentry").count()) > 0);
 await page.screenshot({ path: new URL("13-mobile.png", SHOTS).pathname, fullPage: true });
 await page.setViewportSize({ width: 1440, height: 950 });
 await page.waitForTimeout(300);

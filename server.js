@@ -147,10 +147,13 @@ function buildSuggestions(word) {
   const out = [];
   const push = (raw) => {
     const key = raw.toLowerCase();
-    if (!seen.has(key)) {
-      seen.add(key);
-      out.push(applyCasing(word, raw));
-    }
+    const suggestion = applyCasing(word, raw);
+    // applyCasing can turn a differently-cased dictionary entry (e.g. the
+    // ALL-CAPS УЛАНБААТАР) into the word itself, which would offer the user a
+    // no-op replacement. Never let a suggestion equal what they typed.
+    if (seen.has(key) || suggestion.toLowerCase() === source) return true;
+    seen.add(key);
+    out.push(suggestion);
     return out.length < SUGGEST_LIMIT;
   };
 

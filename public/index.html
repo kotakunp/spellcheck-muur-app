@@ -90,18 +90,17 @@
 
                   <span class="errcount" id="err-count" role="status" hidden></span>
 
-                  <button type="button" class="tool-btn tool-btn--ghost" id="copy-all-btn" title="Бүх текстийг хуулах">
-                    <svg class="ic ic--16" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                    Хуулах
-                  </button>
-                  <button type="button" class="tool-btn tool-btn--ghost" id="download-btn" title="Файлаар татах (.txt)">
-                    <svg class="ic ic--16" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                    Татах
-                  </button>
-                  <button type="button" class="tool-btn tool-btn--ghost" id="clear-btn">
-                    <svg class="ic ic--16" viewBox="0 0 24 24"><path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M10 11v6" /><path d="M14 11v6" /></svg>
-                    Цэвэрлэх
-                  </button>
+                  <div class="toolgroup" role="group" aria-label="Тексттэй ажилах">
+                    <button type="button" class="iconbtn" id="copy-all-btn" title="Бүх текстийг хуулах" aria-label="Бүх текстийг хуулах">
+                      <svg class="ic" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    </button>
+                    <button type="button" class="iconbtn" id="paste-btn" title="Хувийн ойноос буулгах" aria-label="Хувийн ойноос буулгах">
+                      <svg class="ic" viewBox="0 0 24 24"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
+                    </button>
+                    <button type="button" class="iconbtn iconbtn--danger" id="clear-btn" title="Цэвэрлэх" aria-label="Цэвэрлэх">
+                      <svg class="ic" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                    </button>
+                  </div>
                 </div>
 
                 <div class="pad" id="pad">
@@ -128,17 +127,17 @@
                 <p class="status" id="status" role="status"></p>
               </section>
 
-              <aside class="side" aria-label="Солилтын түүх">
+              <aside class="side" aria-label="Алдаатай үгс">
                 <div class="side__head">
-                  <h2 class="side__title">Солилтын түүх</h2>
-                  <button type="button" class="linkbtn" id="clear-history" title="Солилтын түүхийг цэвэрлэх">Цэвэрлэх</button>
+                  <h2 class="side__title">Алдаатай үгс</h2>
+                  <button type="button" class="linkbtn" id="clear-history" title="Зассан үгсийн түүхийг цэвэрлэх">Цэвэрлэх</button>
                 </div>
 
                 <div class="side__body">
                   <div class="historylist" id="history-list"></div>
                   <div class="empty" id="empty">
-                    <p class="empty__title" id="empty-title">Солилтын түүх хоосон</p>
-                    <p class="empty__sub" id="empty-sub">Засвар хийх бүр энд бичигдэнэ.</p>
+                    <p class="empty__title" id="empty-title">Алдаа олдсонгүй</p>
+                    <p class="empty__sub" id="empty-sub">Алдаатай үг олдвол энд харагдана.</p>
                   </div>
                 </div>
               </aside>
@@ -175,14 +174,14 @@
 
           <article class="feat reveal" style="--d: 0.24s">
             <span class="feat__icon"><svg class="ic" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 8v4l3 2"/></svg></span>
-            <h3 class="feat__title">Солилтын түүх</h3>
-            <p class="feat__text">Ямар үгийг хэн яаж зассан бүх нь баруун талын туузанд — хэдэн удаагийн оролцоотойг хүртэл.</p>
+            <h3 class="feat__title">Алдаатай үгсийн тууз</h3>
+            <p class="feat__text">Алдаатай үг бүр баруун талын туузанд байна — засч дуусгахад <em>wrong → right</em> болж хувирна.</p>
           </article>
 
           <article class="feat reveal" style="--d: 0.32s">
-            <span class="feat__icon"><svg class="ic" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
-            <h3 class="feat__title">Хуулах, файл болгох</h3>
-            <p class="feat__text">Зассан бүхэл текстийг нэг товшилтоор санах ойд хуулж, эсвэл .txt файлаар шууд татаж авна уу.</p>
+            <span class="feat__icon"><svg class="ic" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
+            <h3 class="feat__title">Хуулах, буулгах</h3>
+            <p class="feat__text">Зассан бүхэл текстийг нэг товшилтоор хуулж, хүссэн үгийг хувийн ойноос шууд буулгаж авна уу.</p>
           </article>
 
           <article class="feat reveal" style="--d: 0.4s">
@@ -218,7 +217,7 @@
             <span class="step__no">3</span>
             <div>
               <h3 class="step__title">Хэлбэрээ тохируулаад ав</h3>
-              <p class="step__text">Том/жижиг үсгийн хэрэгслүүд, солилтын түүх, хуулах/татах — бүх нь дор байна. Бүртгэл шаардлагагүй.</p>
+              <p class="step__text">Хэлбэр товчилтууд, хуулах ба буулгах, бүх засварын түүх — бүгд дээр байна. Бүртгэл шаардлагагүй.</p>
             </div>
           </li>
         </ol>
