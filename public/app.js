@@ -18,23 +18,15 @@ const undoBtn = document.getElementById("undo-btn");
 const redoBtn = document.getElementById("redo-btn");
 const dropzone = document.getElementById("dropzone");
 const fileInput = document.getElementById("file-input");
-const cardsEl = document.getElementById("cards");
-const allListEl = document.getElementById("all-list");
 const emptyEl = document.getElementById("empty");
-const emptyTitleEl = document.getElementById("empty-title");
-const emptySubEl = document.getElementById("empty-sub");
-const sugsCountEl = document.getElementById("sugs-count");
-const allCountEl = document.getElementById("all-count");
-const tabSugs = document.getElementById("tab-sugs");
-const tabAll = document.getElementById("tab-all");
-const sideBarEl = document.getElementById("side-bar");
+const historyListEl = document.getElementById("history-list");
+const clearHistoryBtn = document.getElementById("clear-history");
 const fixAllBtn = document.getElementById("fix-all-btn");
+const formatBarEl = document.getElementById("formatbar");
 const settingsBtn = document.getElementById("settings-btn");
 const settingsMenu = document.getElementById("settings-menu");
 const themeToggle = document.getElementById("theme-toggle");
 const clearDictBtn = document.getElementById("clear-dict");
-const caseBtn = document.getElementById("case-btn");
-const caseMenu = document.getElementById("case-menu");
 const hoverCardEl = document.getElementById("hover-card");
 
 const API = "/cms-client/modules/spellchecker";
@@ -60,8 +52,7 @@ const SAMPLES = [
 let ignored = new Set(readStored());
 let sessionSkipped = new Set();
 let misspellings = [];
-let activeIndex = -1;
-let currentTab = "sugs";
+let replaceLog = [];
 let checking = false;
 let requestId = 0;
 let debounce = null;
@@ -83,11 +74,6 @@ class BoundedMap extends Map {
 }
 const suggestionCache = new BoundedMap(300);
 
-const ICON_CHEV_L = '<svg class="ic ic--14" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>';
-const ICON_CHEV_R = '<svg class="ic ic--14" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>';
-const ICON_ARROW_R = '<svg class="ic ic--14" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>';
-const ICON_COPY =
-  '<svg class="ic ic--14" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
 // ===== Small helpers =====
 function readStored() {
   try {
@@ -136,17 +122,6 @@ function updateStats() {
   if (statReadingEl) statReadingEl.textContent = `~${minutes} мин`;
 }
 
-function countOccurrences(word) {
-  const key = word.toLowerCase();
-  let count = 0;
-  // Tokenize with the same rule the server and paintMarks use, so a "word"
-  // here is always a full Cyrillic token (no lookbehind / property escapes).
-  for (const token of textEl.value.match(CYRILLIC) || []) {
-    if (token.toLowerCase() === key) count++;
-  }
-  return count;
-}
-
 // ===== Layout =====
 function fit() {
   textEl.style.height = "0px";
@@ -179,7 +154,7 @@ function paint() {
   const value = textEl.value;
   const flagged = new Set(misspellings.map((word) => word.toLowerCase()));
   paintMarks(value, flagged);
-  applyActive();
+  fixAllBtn.disabled = misspellings.length === 0;
 }
 
 function markAt(x, y) {
@@ -203,18 +178,13 @@ async function runCheck() {
   if (!value.trim()) {
     requestId++;
     misspellings = [];
-    activeIndex = -1;
     checking = false;
     setStatus("");
     paint();
-    renderSide();
     return;
   }
   const id = ++requestId;
   checking = true;
-  // Surface the loading state only when the sidebar has nothing to show yet,
-  // so typing never makes existing cards flicker.
-  if (!misspellings.length) renderSide();
   try {
     const res = await fetch(`${API}/check`, {
       method: "POST",
@@ -224,16 +194,12 @@ async function runCheck() {
     if (!res.ok) throw new Error(String(res.status));
     const data = await res.json();
     if (id !== requestId) return;
-    const prevWord = activeIndex >= 0 ? misspellings[activeIndex] : null;
     misspellings = data.filter((word) => !ignored.has(word.toLowerCase()) && !sessionSkipped.has(word.toLowerCase()));
     checking = false;
-    const keep = prevWord ? misspellings.indexOf(prevWord) : -1;
-    activeIndex = keep >= 0 ? keep : misspellings.length ? Math.min(Math.max(activeIndex, 0), misspellings.length - 1) : -1;
     // A successful check clears a stale connection error, but keeps info messages
     // such as "«file.txt» ачааллаа." that describe what just happened.
     if (statusIsError) setStatus("");
     paint();
-    renderSide();
   } catch {
     if (id !== requestId) return;
     checking = false;
@@ -241,153 +207,46 @@ async function runCheck() {
   }
 }
 
-// ===== Sidebar =====
-function renderSide() {
-  const total = misspellings.length;
-  sugsCountEl.textContent = total;
-  allCountEl.textContent = total;
-  cardsEl.textContent = "";
-  allListEl.textContent = "";
-  if (sideBarEl) sideBarEl.hidden = currentTab !== "sugs" || !total;
-  if (!total) {
-    emptyEl.hidden = false;
-    if (checking) {
-      emptyTitleEl.textContent = "Шалгаж байна…";
-      emptySubEl.textContent = "Түр хүлээнэ үү.";
-    } else if (textEl.value.trim()) {
-      emptyTitleEl.textContent = "Алдаа олдсонгүй";
-      emptySubEl.textContent = "Бүх үг зөв бичигдсэн байна.";
-    } else {
-      emptyTitleEl.textContent = "Текст бичнэ үү";
-      emptySubEl.textContent = "Эсвэл жишээ текст сонгоорой.";
-    }
-    cardsEl.hidden = true;
-    allListEl.hidden = true;
-    return;
-  }
-  emptyEl.hidden = true;
-  // Drop suggestion work still queued for the previous render; each card that
-  // survives a re-render is queued again with its fresh index.
-  suggestQueue.length = 0;
-  misspellings.forEach((word, index) => {
-    cardsEl.append(buildCard(word, index, total));
-    allListEl.append(buildRow(word, index, total));
-  });
-  cardsEl.hidden = currentTab !== "sugs";
-  allListEl.hidden = currentTab !== "all";
-  applyActive();
-  misspellings.forEach((word, index) => queueSuggestions(word, index));
+// ===== Replacement history =====
+function logReplacement(from, to, count) {
+  replaceLog.push({ from, to, count, at: Date.now() });
+  if (replaceLog.length > 100) replaceLog.shift();
+  renderHistory();
 }
 
-function buildCard(word, index, total) {
-  const card = document.createElement("article");
-  card.className = "card";
-  card.dataset.word = word;
-  card.dataset.index = index;
-
-  const head = document.createElement("div");
-  head.className = "card__head";
-  const pill = document.createElement("span");
-  pill.className = "pill";
-  pill.textContent = word;
-  const nav = document.createElement("div");
-  nav.className = "card__nav";
-  const count = document.createElement("span");
-  count.className = "card__count";
-  count.textContent = `${index + 1} / ${total}`;
-  const prev = document.createElement("button");
-  prev.type = "button";
-  prev.className = "navbtn";
-  prev.title = "Өмнөх алдаа";
-  prev.setAttribute("aria-label", "Өмнөх алдаа");
-  prev.dataset.nav = "-1";
-  prev.innerHTML = ICON_CHEV_L;
-  const next = document.createElement("button");
-  next.type = "button";
-  next.className = "navbtn";
-  next.title = "Дараагийн алдаа";
-  next.setAttribute("aria-label", "Дараагийн алдаа");
-  next.dataset.nav = "1";
-  next.innerHTML = ICON_CHEV_R;
-  nav.append(count, prev, next);
-  head.append(pill, nav);
-
-  const chips = document.createElement("div");
-  chips.className = "chips";
-  chips.dataset.role = "chips";
-  const pending = document.createElement("span");
-  pending.className = "card__hint";
-  pending.textContent = "Санал хайж байна…";
-  chips.append(pending);
-
-  const explain = document.createElement("div");
-  explain.className = "card__explain";
-  explain.dataset.role = "explain";
-  explain.hidden = true;
-
-  const meta = document.createElement("div");
-  meta.className = "card__meta";
-  const skip = document.createElement("button");
-  skip.type = "button";
-  skip.className = "linkbtn";
-  skip.dataset.role = "skip";
-  skip.textContent = "Алгасах";
-  const ignore = document.createElement("button");
-  ignore.type = "button";
-  ignore.className = "linkbtn";
-  ignore.dataset.role = "ignore";
-  ignore.textContent = "Тольд нэмэх";
-  meta.append(skip, ignore);
-
-  card.append(head, chips, explain, meta);
-  return card;
-}
-
-function buildRow(word, index, total) {
+function buildHistoryEntry(entry) {
   const row = document.createElement("div");
-  row.className = "allrow";
-  row.dataset.word = word;
-  row.dataset.index = index;
-  const label = document.createElement("span");
-  label.className = "allrow__word";
-  label.textContent = word;
-  const occurrences = countOccurrences(word);
-  const count = document.createElement("span");
-  count.className = "allrow__count";
-  count.textContent = `${occurrences} удаа / ${total} алдаанаас`;
-  const goto = document.createElement("button");
-  goto.type = "button";
-  goto.className = "allrow__goto";
-  goto.title = "Карт руу очих";
-  goto.setAttribute("aria-label", "Карт руу очих");
-  goto.dataset.role = "goto";
-  goto.innerHTML = ICON_ARROW_R;
-  row.append(label, count, goto);
+  row.className = "histentry";
+  const time = document.createElement("span");
+  time.className = "histentry__time";
+  time.textContent = new Date(entry.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const from = document.createElement("span");
+  from.className = "histentry__from";
+  from.textContent = entry.from;
+  const arrow = document.createElement("span");
+  arrow.className = "histentry__arrow";
+  arrow.textContent = "→";
+  const to = document.createElement("span");
+  to.className = "histentry__to";
+  to.textContent = entry.to;
+  row.append(time, from, arrow, to);
+  if (entry.count > 1) {
+    const count = document.createElement("span");
+    count.className = "histentry__count";
+    count.textContent = `×${entry.count}`;
+    row.append(count);
+  }
   return row;
 }
+
+function renderHistory() {
+  historyListEl.textContent = "";
+  emptyEl.hidden = replaceLog.length > 0;
+  for (const entry of replaceLog) historyListEl.prepend(buildHistoryEntry(entry));
+}
 // ===== Suggestions =====
-// Suggestions are fetched with a small concurrency limit so a document with
-// hundreds of errors does not fire hundreds of parallel requests at once.
-const suggestQueue = [];
-let suggestActive = 0;
-const SUGGEST_CONCURRENCY = 4;
-
-function queueSuggestions(word, index) {
-  suggestQueue.push({ word, index });
-  pumpSuggestions();
-}
-
-function pumpSuggestions() {
-  while (suggestActive < SUGGEST_CONCURRENCY && suggestQueue.length) {
-    const job = suggestQueue.shift();
-    suggestActive++;
-    fillSuggestions(job.word, job.index).finally(() => {
-      suggestActive--;
-      pumpSuggestions();
-    });
-  }
-}
-
+// Suggestions load lazily (on hover/click) and are cached, so a document with
+// hundreds of errors never fires hundreds of parallel requests.
 async function loadSuggestions(word) {
   if (suggestionCache.has(word)) return suggestionCache.get(word);
   try {
@@ -405,112 +264,6 @@ async function loadSuggestions(word) {
   }
 }
 
-async function fillSuggestions(word, index) {
-  const list = await loadSuggestions(word);
-  const card = cardsEl.querySelector(`.card[data-index="${index}"]`);
-  if (!card || card.dataset.word !== word) return;
-  const chips = card.querySelector('[data-role="chips"]');
-  const explain = card.querySelector('[data-role="explain"]');
-  chips.textContent = "";
-  if (!list.length) {
-    const hint = document.createElement("span");
-    hint.className = "card__hint";
-    hint.textContent = "Санал олдсонгүй. Тольд нэмэх эсвэл гараар засна уу.";
-    chips.append(hint);
-    explain.hidden = true;
-    return;
-  }
-  list.slice(0, 6).forEach((suggestion, i) => {
-    const chip = document.createElement("button");
-    chip.type = "button";
-    chip.className = i === 0 ? "chip chip--best" : "chip";
-    chip.dataset.sug = suggestion;
-    chip.textContent = suggestion;
-    if (i === 0) {
-      const enter = document.createElement("span");
-      enter.className = "chip__enter";
-      enter.textContent = "↵";
-      chip.append(enter);
-      chip.title = "Эхний санал — Enter товч";
-    }
-    chips.append(chip);
-  });
-  explain.hidden = false;
-  explain.textContent = "";
-  const body = document.createElement("div");
-  body.className = "card__explain-body";
-  const label = document.createElement("p");
-  label.className = "card__explain-label";
-  label.textContent = "тайлбар";
-  const text = document.createElement("p");
-  text.className = "card__explain-text";
-  const first = document.createElement("b");
-  first.textContent = `«${list[0]}»`;
-  text.append(first, ` нь зөв бичлэг юм. «${word}» үгийг солих бол дээрх саналыг сонгоно уу.`);
-  body.append(label, text);
-  const copy = document.createElement("button");
-  copy.type = "button";
-  copy.className = "copybtn";
-  copy.title = "Зөв үгийг хуулах";
-  copy.setAttribute("aria-label", "Зөв үгийг хуулах");
-  copy.dataset.role = "copy";
-  copy.dataset.sug = list[0];
-  copy.innerHTML = ICON_COPY;
-  body.append(text, copy);
-  explain.append(label, body);
-}
-
-// ===== Active error navigation =====
-function applyActive() {
-  cardsEl.querySelectorAll(".card.is-active").forEach((el) => el.classList.remove("is-active"));
-  allListEl.querySelectorAll(".allrow.is-active").forEach((el) => el.classList.remove("is-active"));
-  marksEl.querySelectorAll("mark.is-active").forEach((el) => el.classList.remove("is-active"));
-  if (activeIndex < 0) return;
-  const word = misspellings[activeIndex];
-  if (!word) return;
-  const card = cardsEl.querySelector(`.card[data-index="${activeIndex}"]`);
-  if (card) card.classList.add("is-active");
-  const row = allListEl.querySelector(`.allrow[data-index="${activeIndex}"]`);
-  if (row) row.classList.add("is-active");
-  for (const mark of marksEl.querySelectorAll("mark")) {
-    if (mark.dataset.word.toLowerCase() === word.toLowerCase()) mark.classList.add("is-active");
-  }
-}
-
-function setActive(index, { scrollText = false, scrollCard = true } = {}) {
-  if (!misspellings.length) return;
-  activeIndex = Math.min(Math.max(index, 0), misspellings.length - 1);
-  applyActive();
-  const word = misspellings[activeIndex];
-  if (scrollText) scrollToWord(word);
-  if (scrollCard) {
-    const card = cardsEl.querySelector(`.card[data-index="${activeIndex}"]`);
-    card?.scrollIntoView({ block: "nearest" });
-  }
-}
-
-function scrollToWord(word) {
-  for (const mark of marksEl.querySelectorAll("mark")) {
-    if (mark.dataset.word.toLowerCase() !== word.toLowerCase()) continue;
-    const rect = mark.getClientRects()[0];
-    if (!rect) continue;
-    const padRect = padEl.getBoundingClientRect();
-    const visible = rect.top >= padRect.top && rect.bottom <= padRect.bottom;
-    if (visible) return;
-    textEl.scrollTop += rect.top - padRect.top - 60;
-    return;
-  }
-}
-
-function selectWordInText(word) {
-  const key = word.toLowerCase();
-  for (const match of textEl.value.matchAll(CYRILLIC)) {
-    if (match[0].toLowerCase() !== key) continue;
-    textEl.focus();
-    textEl.setSelectionRange(match.index, match.index + match[0].length);
-    return;
-  }
-}
 // ===== Replacing =====
 function applyCasing(source, target) {
   if (source === source.toUpperCase() && source !== source.toLowerCase()) {
@@ -527,22 +280,24 @@ function replaceWord(word, suggestion) {
   const value = textEl.value;
   let out = "";
   let cursor = 0;
-  let changed = false;
+  let count = 0;
   for (const match of value.matchAll(CYRILLIC)) {
     out += value.slice(cursor, match.index);
     if (match[0].toLowerCase() === key) {
       // Casing follows each occurrence: ALL CAPS stays caps, Title stays title.
       out += applyCasing(match[0], suggestion);
-      changed = true;
+      count++;
     } else {
       out += match[0];
     }
     cursor = match.index + match[0].length;
   }
-  if (!changed) return;
+  if (!count) return;
   commitHistory();
   textEl.value = out + value.slice(cursor);
   commitHistory();
+  logReplacement(word, suggestion, count);
+  setStatus(`«${word}» → «${suggestion}»${count > 1 ? ` (${count} удаа)` : ""} солигдлоо.`);
   fit();
   updateStats();
   scheduleCheck();
@@ -552,20 +307,16 @@ function replaceWord(word, suggestion) {
 function skipWord(word) {
   sessionSkipped.add(word.toLowerCase());
   misspellings = misspellings.filter((item) => item.toLowerCase() !== word.toLowerCase());
-  if (activeIndex >= misspellings.length) activeIndex = misspellings.length - 1;
   setStatus(`«${word}» үгийг алгаслаа.`);
   paint();
-  renderSide();
 }
 
 function addToDictionary(word) {
   ignored.add(word.toLowerCase());
   storeIgnored();
   misspellings = misspellings.filter((item) => item.toLowerCase() !== word.toLowerCase());
-  if (activeIndex >= misspellings.length) activeIndex = misspellings.length - 1;
   setStatus(`«${word}» үгийг тольд нэмлээ.`);
   paint();
-  renderSide();
 }
 
 function clearDictionary() {
@@ -587,20 +338,21 @@ async function fixAll() {
       const key = word.toLowerCase();
       let out = "";
       let cursor = 0;
-      let replaced = false;
+      let count = 0;
       for (const match of text.matchAll(CYRILLIC)) {
         out += text.slice(cursor, match.index);
         if (match[0].toLowerCase() === key) {
           out += applyCasing(match[0], best);
-          replaced = true;
+          count++;
         } else {
           out += match[0];
         }
         cursor = match.index + match[0].length;
       }
-      if (replaced) {
+      if (count) {
         text = out + text.slice(cursor);
         fixedCount++;
+        logReplacement(word, best, count);
       }
     }
   }
@@ -738,19 +490,6 @@ function redo() {
   if (hIndex < history.length - 1) applyHistory(hIndex + 1);
 }
 
-// ===== Tabs =====
-function setTab(tab) {
-  currentTab = tab;
-  const sugs = tab === "sugs";
-  tabSugs.classList.toggle("is-active", sugs);
-  tabAll.classList.toggle("is-active", !sugs);
-  tabSugs.setAttribute("aria-selected", String(sugs));
-  tabAll.setAttribute("aria-selected", String(!sugs));
-  const hasErrors = misspellings.length > 0;
-  cardsEl.hidden = !sugs || !hasErrors;
-  allListEl.hidden = sugs || !hasErrors;
-  emptyEl.hidden = hasErrors;
-}
 // ===== File loading (.txt / .docx) =====
 // DOCX is a ZIP with word/document.xml inside. Browsers can inflate raw
 // deflate streams natively, so a minimal ZIP reader keeps this dependency-free.
@@ -833,8 +572,6 @@ function closeMenus() {
   samplesBtn.setAttribute("aria-expanded", "false");
   settingsMenu.hidden = true;
   settingsBtn.setAttribute("aria-expanded", "false");
-  caseMenu.hidden = true;
-  caseBtn.setAttribute("aria-expanded", "false");
 }
 
 function toggleMenu(menu, button) {
@@ -953,42 +690,48 @@ async function fillHoverCard(word) {
   const token = ++hoverToken;
   hoverCardEl.hidden = false;
   hoverCardEl.textContent = "";
-  const head = document.createElement("div");
-  head.className = "hovercard__head";
-  const pill = document.createElement("span");
-  pill.className = "pill";
-  pill.dataset.role = "hoverword";
-  pill.textContent = word;
-  head.append(pill);
-  const chips = document.createElement("div");
-  chips.className = "chips";
-  chips.dataset.role = "hoverchips";
-  const hint = document.createElement("span");
-  hint.className = "card__hint";
+  const list = document.createElement("div");
+  list.className = "rank";
+  list.dataset.role = "ranks";
+  const hint = document.createElement("div");
+  hint.className = "rank__hint";
   hint.textContent = "Санал хайж байна…";
-  chips.append(hint);
-  hoverCardEl.append(head, chips);
+  list.append(hint);
+  const actions = document.createElement("div");
+  actions.className = "hovercard__actions";
+  const skip = document.createElement("button");
+  skip.type = "button";
+  skip.className = "linkbtn";
+  skip.dataset.action = "skip";
+  skip.textContent = "Алгасах";
+  const ignore = document.createElement("button");
+  ignore.type = "button";
+  ignore.className = "linkbtn";
+  ignore.dataset.action = "ignore";
+  ignore.textContent = "Тольд нэмэх";
+  actions.append(skip, ignore);
+  hoverCardEl.append(list, actions);
   if (hoverRect) placeHoverCard(hoverRect);
-  const list = await loadSuggestions(word);
+  const suggestions = await loadSuggestions(word);
   if (token !== hoverToken || hoverCardEl.hidden) return;
-  chips.textContent = "";
-  if (!list.length) {
+  list.textContent = "";
+  if (!suggestions.length) {
     hint.textContent = "Санал олдсонгүй.";
-    chips.append(hint);
+    list.append(hint);
   } else {
-    list.slice(0, 6).forEach((suggestion, i) => {
-      const chip = document.createElement("button");
-      chip.type = "button";
-      chip.className = i === 0 ? "chip chip--best" : "chip";
-      chip.dataset.sug = suggestion;
-      chip.textContent = suggestion;
-      if (i === 0) {
-        const enter = document.createElement("span");
-        enter.className = "chip__enter";
-        enter.textContent = "↵";
-        chip.append(enter);
-      }
-      chips.append(chip);
+    suggestions.slice(0, 6).forEach((suggestion, i) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = i === 0 ? "rank__item rank__item--best" : "rank__item";
+      item.dataset.sug = suggestion;
+      const no = document.createElement("span");
+      no.className = "rank__no";
+      no.textContent = String(i + 1);
+      const label = document.createElement("span");
+      label.className = "rank__word";
+      label.textContent = suggestion;
+      item.append(no, label);
+      list.append(item);
     });
   }
   if (hoverRect && !hoverCardEl.hidden) placeHoverCard(hoverRect);
@@ -1049,15 +792,28 @@ textEl.addEventListener("scroll", () => {
   marksEl.scrollLeft = textEl.scrollLeft;
 });
 
-// Clicking a flagged word in the text activates its card.
+// Selecting a flagged word inside the textarea.
+function selectWordInText(word) {
+  const key = word.toLowerCase();
+  for (const match of textEl.value.matchAll(CYRILLIC)) {
+    if (match[0].toLowerCase() !== key) continue;
+    textEl.focus();
+    textEl.setSelectionRange(match.index, match.index + match[0].length);
+    return;
+  }
+}
+
+// Clicking/tapping a flagged word selects it and opens the ranked list
+// (also the entry point on touch devices); clicking elsewhere closes it.
 padEl.addEventListener("click", (event) => {
   const mark = markAt(event.clientX, event.clientY);
-  if (!mark) return;
-  const word = mark.dataset.word;
-  const index = misspellings.findIndex((item) => item.toLowerCase() === word.toLowerCase());
-  if (index < 0) return;
-  selectWordInText(word);
-  setActive(index, { scrollText: false });
+  if (!mark) {
+    hideHoverCard();
+    return;
+  }
+  selectWordInText(mark.dataset.word);
+  lastHoverMark = mark;
+  showHoverFor(mark);
 });
 
 // Hovering a flagged word highlights every occurrence and opens the quick
@@ -1081,69 +837,18 @@ hoverCardEl.addEventListener("mouseenter", () => {
 });
 hoverCardEl.addEventListener("mouseleave", scheduleHoverHide);
 hoverCardEl.addEventListener("click", (event) => {
-  const chip = event.target.closest(".chip");
-  if (chip && chip.dataset.sug && hoverDisplay) {
-    replaceWord(hoverDisplay, chip.dataset.sug);
+  const item = event.target.closest(".rank__item");
+  if (item && item.dataset.sug && hoverDisplay) {
+    replaceWord(hoverDisplay, item.dataset.sug);
     hideHoverCard();
     return;
   }
-  if (event.target.closest('[data-role="hoverword"]') && hoverDisplay) {
-    const index = misspellings.findIndex((item) => item.toLowerCase() === hoverDisplay.toLowerCase());
-    if (index >= 0) {
-      selectWordInText(hoverDisplay);
-      setActive(index, { scrollText: false });
-    }
-    hideHoverCard();
-  }
+  const action = event.target.closest("[data-action]");
+  if (!action || !hoverDisplay) return;
+  if (action.dataset.action === "skip") skipWord(hoverDisplay);
+  if (action.dataset.action === "ignore") addToDictionary(hoverDisplay);
+  hideHoverCard();
 });
-
-// Card interactions: suggestion chips, ignore, copy, prev/next navigation.
-cardsEl.addEventListener("click", (event) => {
-  const card = event.target.closest(".card");
-  if (!card) return;
-  const index = Number(card.dataset.index);
-  const target = event.target.closest("button");
-  if (!target) {
-    setActive(index, { scrollText: true });
-    return;
-  }
-  if (target.dataset.role === "copy") {
-    navigator.clipboard?.writeText(target.dataset.sug);
-    setStatus(`«${target.dataset.sug}» үгийг хууллаа.`);
-    return;
-  }
-  if (target.dataset.sug) {
-    replaceWord(card.dataset.word, target.dataset.sug);
-    return;
-  }
-  if (target.dataset.role === "skip") {
-    skipWord(card.dataset.word);
-    return;
-  }
-  if (target.dataset.role === "ignore") {
-    addToDictionary(card.dataset.word);
-    return;
-  }
-  if (target.dataset.nav) {
-    setActive(index + Number(target.dataset.nav), { scrollText: true });
-    return;
-  }
-  setActive(index, { scrollText: true });
-});
-
-// Rows in the "Бүх алдаа" tab jump to the matching card.
-allListEl.addEventListener("click", (event) => {
-  const row = event.target.closest(".allrow");
-  if (!row) return;
-  const index = Number(row.dataset.index);
-  if (event.target.closest('[data-role="goto"]')) setTab("sugs");
-  selectWordInText(row.dataset.word);
-  // setActive scrolls both the text pad and the matching card into view.
-  setActive(index, { scrollText: true });
-});
-
-tabSugs.addEventListener("click", () => setTab("sugs"));
-tabAll.addEventListener("click", () => setTab("all"));
 
 checkBtn.addEventListener("click", () => runCheck());
 if (copyAllBtn) copyAllBtn.addEventListener("click", copyAll);
@@ -1157,11 +862,9 @@ clearBtn.addEventListener("click", () => {
   setStatus("");
   misspellings = [];
   sessionSkipped.clear();
-  activeIndex = -1;
   fit();
   updateStats();
   paint();
-  renderSide();
   textEl.focus();
 });
 sampleBtn.addEventListener("click", () => loadSample(0));
@@ -1173,15 +876,9 @@ settingsBtn.addEventListener("click", (event) => {
   event.stopPropagation();
   toggleMenu(settingsMenu, settingsBtn);
 });
-caseBtn.addEventListener("click", (event) => {
-  event.stopPropagation();
-  toggleMenu(caseMenu, caseBtn);
-});
-caseMenu.addEventListener("click", (event) => {
-  const item = event.target.closest("[data-case]");
-  if (!item) return;
-  closeMenus();
-  applyCase(item.dataset.case);
+formatBarEl.addEventListener("click", (event) => {
+  const btn = event.target.closest("[data-case]");
+  if (btn) applyCase(btn.dataset.case);
 });
 document.addEventListener("click", (event) => {
   if (!event.target.closest(".popwrap")) closeMenus();
@@ -1207,6 +904,11 @@ themeToggle.addEventListener("change", () => {
 clearDictBtn.addEventListener("click", () => {
   clearDictionary();
   closeMenus();
+});
+clearHistoryBtn.addEventListener("click", () => {
+  replaceLog = [];
+  renderHistory();
+  setStatus("Солилтын түүхийг цэвэрлэлээ.");
 });
 
 // File drop / picker.
@@ -1236,5 +938,5 @@ initTheme();
 updateHistButtons();
 updateStats();
 paint();
-renderSide();
+renderHistory();
 fit();

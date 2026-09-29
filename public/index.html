@@ -68,19 +68,6 @@
             </button>
           </div>
 
-          <span class="popwrap">
-            <button type="button" class="tool-btn" id="case-btn" aria-haspopup="true" aria-expanded="false">
-              Хэлбэр
-              <svg class="ic ic--14" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></svg>
-            </button>
-            <div class="menu" id="case-menu" hidden>
-              <button type="button" class="menu__item" data-case="upper">БҮГД ТОМ <span class="menu__hint">АААА</span></button>
-              <button type="button" class="menu__item" data-case="lower">бүгд жижиг <span class="menu__hint">аааа</span></button>
-              <button type="button" class="menu__item" data-case="sentence">Өгүүлбэрийн хэлбэр <span class="menu__hint">Аааа</span></button>
-              <button type="button" class="menu__item" data-case="title">Үг бүрийн эх үсэг <span class="menu__hint">Аааа Аааа</span></button>
-            </div>
-          </span>
-
           <div class="stats" aria-live="polite">
             <span id="stat-words">0 үг</span>
             <span class="stats__sep">|</span>
@@ -118,6 +105,14 @@
           ></textarea>
         </div>
 
+        <div class="formatbar" id="formatbar" role="group" aria-label="Текст хэлбэр">
+          <span class="formatbar__label">Хэлбэр:</span>
+          <button type="button" class="fmtbtn" data-case="upper">БҮГД ТОМ</button>
+          <button type="button" class="fmtbtn" data-case="lower">бүгд жижиг</button>
+          <button type="button" class="fmtbtn" data-case="sentence">Өгүүлбэрийн хэлбэр</button>
+          <button type="button" class="fmtbtn" data-case="title">Үг бүрийн эх үсэг</button>
+        </div>
+
         <div class="actions">
           <label class="dropzone" id="dropzone">
             <svg class="ic ic--20" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></svg>
@@ -130,6 +125,10 @@
               <svg class="ic ic--16" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></svg>
               Жишээ текст
             </button>
+            <button type="button" class="btn" id="fix-all-btn" disabled>
+              <svg class="ic ic--16" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
+              Бүгдийг засах
+            </button>
             <button type="button" class="btn btn--primary" id="check-btn">
               <svg class="ic ic--16" viewBox="0 0 24 24"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z" /></svg>
               Алдаа шалгах
@@ -140,29 +139,17 @@
         <p class="status" id="status" role="status"></p>
       </section>
 
-      <aside class="side" aria-label="Алдааны жагсаалт">
-        <div class="tabs" role="tablist" aria-label="Үзүүлэх хэсэг">
-          <button type="button" class="tab is-active" id="tab-sugs" role="tab" aria-selected="true" aria-controls="cards">
-            <svg class="ic ic--16" viewBox="0 0 24 24"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z" /></svg>
-            Санал (<span id="sugs-count">0</span>)
-          </button>
-          <button type="button" class="tab" id="tab-all" role="tab" aria-selected="false" aria-controls="all-list">
-            <svg class="ic ic--16" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
-            Бүх алдаа (<span id="all-count">0</span>)
-          </button>
-        </div>
-
-        <div class="side__bar" id="side-bar" hidden>
-          <span class="side__bar-label">Эхний саналаар засах</span>
-          <button type="button" class="btn btn--sm btn--primary" id="fix-all-btn">Бүгдийг засах</button>
+      <aside class="side" aria-label="Солилтын түүх">
+        <div class="side__head">
+          <h2 class="side__title">Солилтын түүх</h2>
+          <button type="button" class="linkbtn" id="clear-history" title="Солилтын түүхийг цэвэрлэх">Цэвэрлэх</button>
         </div>
 
         <div class="side__body">
-          <div class="cards" id="cards" role="tabpanel" aria-labelledby="tab-sugs"></div>
-          <div class="alllist" id="all-list" role="tabpanel" aria-labelledby="tab-all" hidden></div>
+          <div class="historylist" id="history-list"></div>
           <div class="empty" id="empty">
-            <p class="empty__title" id="empty-title">Текст бичнэ үү</p>
-            <p class="empty__sub" id="empty-sub">Эсвэл жишээ текст сонгоорой.</p>
+            <p class="empty__title" id="empty-title">Солилтын түүх хоосон</p>
+            <p class="empty__sub" id="empty-sub">Засвар хийх бүр энд бичигдэнэ.</p>
           </div>
         </div>
       </aside>

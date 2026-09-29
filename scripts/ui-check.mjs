@@ -100,16 +100,37 @@ page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
 const shot = (name) => page.screenshot({ path: new URL(name, SHOTS).pathname });
 const textValue = () => page.locator("#text").inputValue();
 
+// Marks render behind the textarea, so drive hover through raw mouse moves.
+async function hoverMark(locator) {
+  const box = await locator.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.locator("#hover-card").waitFor({ state: "visible", timeout: 6000 });
+}
+
+async function hoverFirstMark() {
+  await page.waitForSelector(".pad__marks mark", { timeout: 8000 });
+  await hoverMark(page.locator(".pad__marks mark").first());
+  await page.waitForSelector("#hover-card .rank__item", { timeout: 8000 });
+}
+
+const pickRank = (n = 1) => page.locator("#hover-card .rank__item").nth(n - 1).click();
+
 await page.goto(BASE, { waitUntil: "networkidle" });
 
-// ===== Empty state =====
+// ===== Empty state: no cards anywhere, replacement history empty =====
 check("empty state visible", await page.locator("#empty").isVisible());
-check("empty title prompts for text", (await page.locator("#empty-title").textContent()) === "Текст бичнэ үү");
-check("sidebar cards empty at start", (await page.locator("#cards .card").count()) === 0);
-check("counts zero at start", (await page.locator("#sugs-count").textContent()) === "0" && (await page.locator("#all-count").textContent()) === "0");
+check("empty title names the history", (await page.locator("#empty-title").textContent()) === "Солилтын түүх хоосон");
+check("history list empty at start", (await page.locator("#history-list .histentry").count()) === 0);
+check("no card elements exist anymore", (await page.locator(".card, #cards, #all-list, .tabs").count()) === 0);
+check("no marks at start", (await page.locator(".pad__marks mark").count()) === 0);
 check("undo disabled at start", await page.locator("#undo-btn").isDisabled());
 check("redo disabled at start", await page.locator("#redo-btn").isDisabled());
 check("samples menu closed at start", await page.locator("#samples-menu").isHidden());
+check("fix all disabled at start", await page.locator("#fix-all-btn").isDisabled());
+check("format bar shows four tools", (await page.locator("#formatbar .fmtbtn").count()) === 4);
+const padBox0 = await page.locator("#pad").boundingBox();
+const fmtBox0 = await page.locator("#formatbar").boundingBox();
+check("formatters sit under the input", fmtBox0.y >= padBox0.y + padBox0.height - 2, { padBottom: padBox0.y + padBox0.height, fmt: fmtBox0.y });
 await shot("01-empty.png");
 
 // ===== Samples menu =====
@@ -118,141 +139,91 @@ const menuItems = await page.locator("#samples-menu .menu__item").allTextContent
 check("samples menu lists samples", menuItems.length >= 2, menuItems);
 check("aria-expanded true while open", (await page.locator("#samples-btn").getAttribute("aria-expanded")) === "true");
 await page.keyboard.press("Escape");
-// ===== Load sample, cards render =====
-await page.locator("#sample-btn").click();
-await page.waitForSelector(".pad__marks mark", { timeout: 6000 });
-await page.waitForSelector("#cards .card .chip, #cards .card .card__hint", { timeout: 8000 });
+check("escape closes the samples menu", await page.locator("#samples-menu").isHidden());
 
+// ===== Load sample: every flagged word is highlighted at once =====
+await page.locator("#sample-btn").click();
+await page.waitForSelector(".pad__marks mark", { timeout: 8000 });
 const marks = await page.locator(".pad__marks mark").allTextContents();
-const uniqueMarks = [...new Set(marks)];
-const cards = await page.locator("#cards .card").count();
+const uniqueMarks = [...new Set(marks.map((m) => m.toLowerCase()))];
 check("sample produces marks", marks.length > 0, marks);
-check("every mark gets a card", cards === uniqueMarks.length, { cards, uniqueMarks });
-check("sugs count matches cards", (await page.locator("#sugs-count").textContent()) === String(cards));
-check("all count matches cards", (await page.locator("#all-count").textContent()) === String(cards));
-check("empty state hidden with results", await page.locator("#empty").isHidden());
-check("stats show words and chars", /үг/.test(await page.locator("#stat-words").textContent()) && /тэмдэгт/.test(await page.locator("#stat-chars").textContent()));
-check("first card is active", (await page.locator("#cards .card.is-active").count()) === 1);
-check("active card is index 0", (await page.locator("#cards .card.is-active").getAttribute("data-index")) === "0");
+check("marks cover every flagged occurrence", marks.length >= uniqueMarks.length, { marks: marks.length, uniqueMarks });
+const tintedCount = await page.evaluate(() =>
+  [...document.querySelectorAll(".pad__marks mark")].filter((m) => getComputedStyle(m).backgroundColor !== "rgba(0, 0, 0, 0)").length
+);
+check("all misspellings are tinted at once", tintedCount === marks.length, { tintedCount, marks: marks.length });
+check("hover card hidden until hovered", await page.locator("#hover-card").isHidden());
+check("fix all enabled with errors present", !(await page.locator("#fix-all-btn").isDisabled()));
 await shot("02-flagged.png");
 
-// ===== Suggestion chips for the "Уланбаатар" card =====
+// ===== Hover: ranked candidates only, no explanation text =====
 const typo = "Уланбаатар";
-const typoCard = page.locator("#cards .card", { has: page.locator(`.pill:text-is("${typo}")`) }).first();
-check("typo card exists", (await typoCard.count()) === 1);
-await typoCard.locator(".chip").first().waitFor({ timeout: 8000 });
-const chips = await typoCard.locator(".chip").allTextContents();
-check("typo card has suggestion chips", chips.length > 0, chips);
-check("top chip is chip--best", (await typoCard.locator(".chip--best").count()) === 1);
-check("chips include Улаанбаатар", chips.some((c) => c.includes("Улаанбаатар")), chips);
-check("best chip carries enter hint", (await typoCard.locator(".chip--best .chip__enter").count()) === 1);
-check("explain block visible on card", await typoCard.locator(".card__explain").isVisible());
-check("explain labels the suggestion", /тайлбар/.test(await typoCard.locator(".card__explain-label").textContent()));
-check("explain mentions the misspelled word", (await typoCard.locator(".card__explain-text").textContent()).includes(typo));
-check("ignore button offered", await typoCard.locator('[data-role="ignore"]').isVisible());
+await hoverFirstMark();
+check("hover opens the suggestion card", await page.locator("#hover-card").isVisible());
+check("hover highlights every occurrence of the word", (await page.locator(".pad__marks mark.is-hover").count()) >= 1);
+const rankItems = await page.locator("#hover-card .rank__item").allTextContents();
+check("hover lists ranked candidates", rankItems.length > 0, rankItems);
+const topCandidate = await page.locator("#hover-card .rank__word").first().textContent();
+const topRankNo = await page.locator("#hover-card .rank__no").first().textContent();
+check("top candidate is ranked first", topRankNo === "1" && topCandidate === "Улаанбаатар", { topRankNo, topCandidate });
+check("hover card shows nothing but the candidate list and actions", (await page.locator("#hover-card .card__explain, #hover-card .rank__hint").count()) === 0);
+check("hover word gets the stronger tint", (await page.evaluate(() => {
+  const m = document.querySelector(".pad__marks mark.is-hover");
+  const n = document.querySelector(".pad__marks mark:not(.is-hover)");
+  return getComputedStyle(m).backgroundColor !== getComputedStyle(n).backgroundColor;
+})));
+await shot("03-hover-card.png");
 
-// ===== Replace by clicking the best chip =====
-const before = await textValue();
-await typoCard.locator(".chip--best").click();
+// ===== Replace via the ranked list: history entry + casing =====
+await pickRank(1);
 await page.waitForTimeout(900);
-const after = await textValue();
-check("typo present before replace", before.includes(typo));
-check("typo gone after replace", !after.includes(typo));
-check("correct form present after replace", after.includes("Улаанбаатар"), after.slice(0, 60));
-check("replaced card removed from sidebar", (await page.locator("#cards .card .pill", { hasText: typo }).count()) === 0);
-const marksAfter = await page.locator(".pad__marks mark").allTextContents();
-check("mark count drops after replace", marksAfter.length < marks.length, { before: marks.length, after: marksAfter.length });
-await shot("03-replaced.png");
+const replacedText = await textValue();
+check("ranked pick replaces the word", replacedText.includes("Улаанбаатар") && !replacedText.includes(typo), replacedText.slice(0, 60));
+check("hover card closes after replacing", await page.locator("#hover-card").isHidden());
+check("replaced word loses its marks", (await page.locator(`.pad__marks mark:text-is("${typo}")`).count()) === 0);
+const historyRows = await page.locator("#history-list .histentry").count();
+check("replacement recorded in history", historyRows === 1, historyRows);
+check("history shows the wrong word", (await page.locator("#history-list .histentry__from").first().textContent()) === typo);
+check("history shows the new word", (await page.locator("#history-list .histentry__to").first().textContent()) === "Улаанбаатар");
+check("history arrow present", (await page.locator("#history-list .histentry__arrow").first().textContent()) === "→");
+check("history time stamp present", /\d{1,2}:\d{2}/.test(await page.locator("#history-list .histentry__time").first().textContent()));
+check("empty state hidden once history has entries", await page.locator("#empty").isHidden());
+check("status confirms the transform", /солигдлоо/.test(await page.locator("#status").textContent()), await page.locator("#status").textContent());
+await shot("04-history.png");
 
 // ===== Undo / redo =====
 await page.locator("#undo-btn").click();
 await page.waitForTimeout(900);
-const undone = await textValue();
-check("undo restores the typo", undone.includes(typo));
+check("undo restores the typo", (await textValue()).includes(typo));
 check("redo becomes enabled after undo", !(await page.locator("#redo-btn").isDisabled()));
 await page.locator("#redo-btn").click();
 await page.waitForTimeout(900);
-const redone = await textValue();
-check("redo re-applies the fix", !redone.includes(typo) && redone.includes("Улаанбаатар"));
-check("undo still enabled after redo", !(await page.locator("#undo-btn").isDisabled()));
-await shot("04-undo-redo.png");
-// ===== Tabs =====
-await page.locator("#tab-all").click();
-const rows = await page.locator("#all-list .allrow").count();
-const cardsNow = await page.locator("#cards .card").count();
-check("all tab lists every card word", rows === cardsNow, { rows, cardsNow });
-check("cards hidden on all tab", await page.locator("#cards").isHidden());
-check("all list visible on all tab", await page.locator("#all-list").isVisible());
-check("all tab aria-selected", (await page.locator("#tab-all").getAttribute("aria-selected")) === "true");
-check("row shows occurrence count", /удаа \/ \d+ алдаанаас/.test(await page.locator("#all-list .allrow__count").first().textContent()));
-check("active row highlighted", (await page.locator("#all-list .allrow.is-active").count()) === 1);
-await shot("05-all-tab.png");
+check("redo re-applies the fix", !(await textValue()).includes(typo));
+check("history entry survives undo/redo of text", (await page.locator("#history-list .histentry").count()) === 1);
 
-const thirdRow = page.locator("#all-list .allrow").nth(Math.min(2, rows - 1));
-const thirdWord = await thirdRow.locator(".allrow__word").textContent();
-await thirdRow.click();
-check("row click moves the active card", (await page.locator("#all-list .allrow.is-active .allrow__word").textContent()) === thirdWord);
-const activeMarkText = await page.locator(".pad__marks mark.is-active").first().textContent();
-check("active mark matches active row", activeMarkText === thirdWord, { activeMarkText, thirdWord });
-check("selection follows active word", (await page.evaluate(() => {
-  const el = document.getElementById("text");
-  return el.value.slice(el.selectionStart, el.selectionEnd);
-})) === thirdWord);
-
-// "goto" arrow jumps back to the suggestions tab with that card active.
-await thirdRow.locator('[data-role="goto"]').click();
-await page.waitForTimeout(200);
-check("goto switches to sugs tab", (await page.locator("#tab-sugs").getAttribute("aria-selected")) === "true");
-check("goto activates the same card", (await page.locator("#cards .card.is-active .pill").textContent()) === thirdWord, thirdWord);
-check("cards visible again", await page.locator("#cards").isVisible());
-
-// ===== Prev / next navigation (start from the first error) =====
-await page.locator("#tab-all").click();
-await page.locator("#all-list .allrow").first().locator('[data-role="goto"]').click();
-await page.waitForTimeout(200);
-check("goto returns to the sugs tab", (await page.locator("#tab-sugs").getAttribute("aria-selected")) === "true");
-const startIndex = Number(await page.locator("#cards .card.is-active").getAttribute("data-index"));
-check("goto from first row activates index 0", startIndex === 0, startIndex);
-await page.locator("#cards .card.is-active [data-nav='1']").click();
-const nextIndex = Number(await page.locator("#cards .card.is-active").getAttribute("data-index"));
-check("next moves forward one card", nextIndex === startIndex + 1, { startIndex, nextIndex });
-await page.locator("#cards .card.is-active [data-nav='-1']").click();
-const backIndex = Number(await page.locator("#cards .card.is-active").getAttribute("data-index"));
-check("prev moves back one card", backIndex === startIndex, { startIndex, backIndex });
-check("nav count label tracks position", (await page.locator("#cards .card.is-active .card__count").textContent()) === `${backIndex + 1} / ${cardsNow}`, { backIndex, cardsNow });
-
-// ===== Clicking a flagged word in the text activates its card =====
-const firstMarkWord = await page.locator("#cards .card").nth(1).locator(".pill").textContent();
-const markForWord = page.locator(".pad__marks mark", { hasText: firstMarkWord }).first();
-const markBox = await markForWord.boundingBox();
-await page.mouse.click(markBox.x + markBox.width / 2, markBox.y + markBox.height / 2);
-await page.waitForTimeout(200);
-check("clicking a mark activates its card", (await page.locator("#cards .card.is-active .pill").textContent()) === firstMarkWord, firstMarkWord);
-check("clicking a mark selects the word", (await page.evaluate(() => {
-  const el = document.getElementById("text");
-  return el.value.slice(el.selectionStart, el.selectionEnd);
-})) === firstMarkWord);
-check("mark gets is-active class", (await page.locator(".pad__marks mark.is-active").count()) > 0);
-await shot("06-mark-click.png");
-// ===== Add to dictionary =====
-const dictCard = page.locator("#cards .card").first();
-const dictWord = await dictCard.locator(".pill").textContent();
-const countBeforeDict = await page.locator("#cards .card").count();
-await dictCard.locator('[data-role="ignore"]').click();
+// ===== Hover actions: skip and add to dictionary =====
+await page.locator("#clear-btn").click();
+await page.locator("#text").fill("Шинэ нэр болох туршилтт гэж бичлээ.");
+await hoverFirstMark();
+await page.locator('#hover-card [data-action="skip"]').click();
 await page.waitForTimeout(300);
-check("ignored card leaves the sidebar", (await page.locator("#cards .card").count()) === countBeforeDict - 1, dictWord);
-check("ignored word loses its mark", (await page.locator(".pad__marks mark", { hasText: dictWord }).count()) === 0, dictWord);
-const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("sc-ignored-v1") || "[]"));
-check("dictionary persisted to localStorage", stored.includes(dictWord.toLowerCase()), stored);
-check("status confirms dictionary add", /тольд нэмлээ/i.test(await page.locator("#status").textContent()));
-await shot("07-ignored.png");
+check("skip removes the mark", (await page.locator('.pad__marks mark:text-is("туршилтт")').count()) === 0);
+check("status reports the skip", /алгаслаа/i.test(await page.locator("#status").textContent()));
+check("skipped word is not persisted to the dictionary", (await page.evaluate(() => JSON.parse(localStorage.getItem("sc-ignored-v1") || "[]"))).length === 0);
 
-// Clearing the dictionary brings the word back.
+await page.locator("#clear-btn").click();
+await page.locator("#text").fill("Монгол улс нь хүүнтэй орон.");
+await hoverFirstMark();
+await page.locator('#hover-card [data-action="ignore"]').click();
+await page.waitForTimeout(300);
+check("dictionary add removes the mark", (await page.locator('.pad__marks mark:text-is("хүүнтэй")').count()) === 0);
+check("dictionary persisted to localStorage", (await page.evaluate(() => JSON.parse(localStorage.getItem("sc-ignored-v1") || "[]"))).includes("хүүнтэй"));
+check("status confirms dictionary add", /тольд нэмлээ/i.test(await page.locator("#status").textContent()));
 await page.locator("#settings-btn").click();
 check("settings menu opens", await page.locator("#settings-menu").isVisible());
 await page.locator("#clear-dict").click();
-await page.waitForSelector(`#cards .card .pill:text-is("${dictWord}")`, { timeout: 8000 });
-check("cleared dictionary restores the card", (await page.locator("#cards .card").count()) === countBeforeDict);
+await page.waitForSelector('.pad__marks mark:text-is("хүүнтэй")', { timeout: 8000 });
+check("cleared dictionary restores the mark", (await page.locator('.pad__marks mark:text-is("хүүнтэй")').count()) === 1);
 check("settings menu closed after clear", await page.locator("#settings-menu").isHidden());
 check("dictionary emptied in storage", (await page.evaluate(() => JSON.parse(localStorage.getItem("sc-ignored-v1") || "[]"))).length === 0);
 
@@ -261,14 +232,14 @@ const txtPath = new URL("typo-sample.txt", TMP).pathname;
 await writeFile(txtPath, "Энэ бол шинэ файл юм. Уланбаатар хотод морь унаа байна.\nДараагийн мөр: сайхан өдөр байна.\n");
 await page.setInputFiles("#file-input", txtPath);
 await page.waitForFunction(() => document.getElementById("text").value.startsWith("Энэ бол шинэ"), null, { timeout: 8000 });
-await page.waitForSelector("#cards .card .chip", { timeout: 8000 });
+await page.waitForSelector(".pad__marks mark", { timeout: 8000 });
 const txtValue = await textValue();
 check("txt file loaded into the editor", txtValue.startsWith("Энэ бол шинэ файл юм."), txtValue.slice(0, 40));
 check("txt newline preserved", txtValue.includes("байна.\nДараагийн мөр"));
 check("loaded file is checked", (await page.locator(".pad__marks mark").count()) > 0);
 check("status names the loaded file", /typo-sample\.txt/.test(await page.locator("#status").textContent()), await page.locator("#status").textContent());
 check("undo available after import", !(await page.locator("#undo-btn").isDisabled()));
-await shot("08-txt-import.png");
+await shot("05-txt-import.png");
 
 // ===== DOCX import (exercises the deflate ZIP reader) =====
 const docxPath = new URL("typo-sample.docx", TMP).pathname;
@@ -280,7 +251,7 @@ check("docx paragraphs extracted", docxValue.includes("Уланбаатар хо
 check("docx newline preserved between paragraphs", docxValue.includes("өгүүлбэр.\nУланбаатар"));
 check("docx content checked for errors", (await page.locator(".pad__marks mark").count()) > 0);
 check("docx status names the file", /typo-sample\.docx/.test(await page.locator("#status").textContent()));
-await shot("09-docx-import.png");
+await shot("06-docx-import.png");
 
 // ===== Drag & drop a file onto the dropzone =====
 await page.evaluate(async () => {
@@ -293,7 +264,6 @@ await page.evaluate(async () => {
 await page.waitForFunction(() => document.getElementById("text").value.startsWith("Чирж оруулсан"), null, { timeout: 8000 });
 check("dropped file loaded", (await textValue()).includes("Чирж оруулсан текст."));
 check("dropzone highlight cleared after drop", (await page.locator("#dropzone.is-over").count()) === 0);
-await shot("10-dropped.png");
 
 // Unsupported file type reports a friendly error.
 await page.evaluate(() => {
@@ -306,11 +276,12 @@ await page.evaluate(() => {
 await page.waitForTimeout(400);
 check("broken docx reports an error", /уншиж чадсангүй/.test(await page.locator("#status").textContent()), await page.locator("#status").textContent());
 check("error status styled", (await page.locator("#status.status--info").count()) === 0);
+
 // ===== Keyboard shortcut: Cmd/Ctrl+Enter re-checks =====
 await page.locator("#text").click();
 await page.keyboard.press("ControlOrMeta+Enter");
 await page.waitForTimeout(900);
-check("shortcut keeps results in sync", (await page.locator("#cards .card").count()) > 0);
+check("shortcut keeps results in sync", (await page.locator(".pad__marks mark").count()) > 0);
 
 // ===== Stylesheet sanity: every rule must be top level (only @media may nest) =====
 const cssHealth = await page.evaluate(() => {
@@ -341,12 +312,14 @@ await page.locator("#settings-btn").click();
 await page.locator("#theme-toggle").check();
 check("dark theme attribute applied", (await page.locator("html").getAttribute("data-theme")) === "dark");
 check("theme stored in localStorage", (await page.evaluate(() => localStorage.getItem("sc-theme-v1"))) === "dark");
-await shot("11-dark.png");
+await shot("07-dark.png");
 await page.keyboard.press("Escape");
 check("escape closes settings menu", await page.locator("#settings-menu").isHidden());
 await page.reload({ waitUntil: "networkidle" });
 check("dark theme survives reload", (await page.locator("html").getAttribute("data-theme")) === "dark");
 check("theme checkbox reflects stored theme", await page.locator("#theme-toggle").isChecked());
+check("replacement history is session-only (resets on reload)", (await page.locator("#history-list .histentry").count()) === 0);
+check("history empty state returns after reload", await page.locator("#empty").isVisible());
 await page.locator("#settings-btn").click();
 await page.locator("#theme-toggle").uncheck();
 check("light theme override stored", (await page.evaluate(() => localStorage.getItem("sc-theme-v1"))) === "light");
@@ -355,44 +328,48 @@ await page.keyboard.press("Escape");
 
 // ===== Clear button =====
 await page.locator("#sample-btn").click();
-await page.waitForSelector("#cards .card", { timeout: 8000 });
+await page.waitForSelector(".pad__marks mark", { timeout: 8000 });
 await page.locator("#clear-btn").click();
 await page.waitForTimeout(300);
 check("clear empties the editor", (await textValue()) === "");
-check("clear empties the sidebar", (await page.locator("#cards .card").count()) === 0);
-check("clear empties the all list", (await page.locator("#all-list .allrow").count()) === 0);
-check("clear resets counters", (await page.locator("#sugs-count").textContent()) === "0");
+check("clear removes all marks", (await page.locator(".pad__marks mark").count()) === 0);
+check("clear disables fix all", await page.locator("#fix-all-btn").isDisabled());
 check("clear resets stats", (await page.locator("#stat-words").textContent()) === "0 үг");
-check("empty state returns after clear", await page.locator("#empty").isVisible());
-check("empty title reflects cleared editor", (await page.locator("#empty-title").textContent()) === "Текст бичнэ үү");
-await shot("12-cleared.png");
+check("empty state reflects empty history", await page.locator("#empty").isVisible());
+await shot("08-cleared.png");
+
+// ===== Replacement history clears on demand =====
+await page.locator("#text").fill("Энд улаанбатар гэсэн алдаа байна.");
+await hoverFirstMark();
+await pickRank(1);
+await page.waitForTimeout(900);
+check("replacement adds a history entry", (await page.locator("#history-list .histentry").count()) === 1);
+await page.locator("#clear-history").click();
+await page.waitForTimeout(200);
+check("history clear button empties the list", (await page.locator("#history-list .histentry").count()) === 0);
+check("history clear restores the empty state", await page.locator("#empty").isVisible());
+check("history clear reports in the status", /цэвэрлэлээ/.test(await page.locator("#status").textContent()));
 
 // ===== Typing triggers automatic checking =====
 await page.locator("#text").fill("Энэ өгүүлбэрт улаанбатар гэсэн алдаа байна.");
-await page.waitForSelector("#cards .card", { timeout: 8000 });
+await page.waitForSelector(".pad__marks mark", { timeout: 8000 });
 check("typing auto-checks the text", (await page.locator(".pad__marks mark").count()) > 0);
-const typedCard = page.locator("#cards .card").first();
-const typedWord = await typedCard.locator(".pill").textContent();
-await typedCard.locator(".chip").first().waitFor({ timeout: 8000 });
-const typedChip = (await typedCard.locator(".chip").first().textContent()).replace(/\s*↵\s*$/, "").trim();
-check("auto-check offers suggestions", typedChip.length > 0 && typedChip !== typedWord, { typedWord, typedChip });
-await typedCard.locator(".chip").first().click();
+const typedWord = await page.locator(".pad__marks mark").first().textContent();
+await hoverFirstMark();
+const typedBest = await page.locator("#hover-card .rank__word").first().textContent();
+check("auto-check offers ranked candidates", typedBest.length > 0 && typedBest.toLowerCase() !== typedWord.toLowerCase(), { typedWord, typedBest });
+await pickRank(1);
 await page.waitForTimeout(900);
-const fixed = await textValue();
-check("lowercase typo is replaced with the chosen suggestion", fixed.includes(typedChip) && !fixed.includes(typedWord), fixed);
-check("lowercase source keeps lowercase suggestion", typedChip !== typedChip.toUpperCase() && fixed.includes(typedChip.toLowerCase()), fixed);
-await shot("13-typed.png");
+const typedFixed = await textValue();
+check("lowercase typo is replaced with the chosen candidate", typedFixed.includes(typedBest.toLowerCase()) && !typedFixed.includes(typedWord), typedFixed);
+check("replacement status names both words", (await page.locator("#status").textContent()).includes(typedWord) && (await page.locator("#status").textContent()).includes(typedBest), await page.locator("#status").textContent());
 
 // ===== Replace-all with per-occurrence casing =====
 await page.locator("#text").fill("Уланбаатар хот. УЛАНБААТАР руу. уланбаатар руу.");
-await page.waitForSelector("#cards .card .chip", { timeout: 8000 });
-const caseCard = page.locator("#cards .card").first();
-const caseWord = await caseCard.locator(".pill").textContent();
-check("repeated typo produces a single card", (await page.locator("#cards .card").count()) === 1, caseWord);
-await page.locator("#tab-all").click();
-check("all-errors row counts all three occurrences", /3 удаа/.test(await page.locator("#all-list .allrow__count").first().textContent()), await page.locator("#all-list .allrow__count").first().textContent());
-await page.locator("#tab-sugs").click();
-await caseCard.locator(".chip--best").click();
+await page.waitForSelector(".pad__marks mark", { timeout: 8000 });
+check("repeated typo yields three marks", (await page.locator(".pad__marks mark").count()) === 3);
+await hoverFirstMark();
+await pickRank(1);
 await page.waitForTimeout(900);
 const cased = await textValue();
 check("every occurrence is replaced at once", !cased.toLowerCase().includes("уланбаатар"), cased);
@@ -400,12 +377,13 @@ check("title-case occurrence stays title case", cased.includes("Улаанбаа
 check("upper-case occurrence stays upper case", cased.includes("УЛААНБААТАР руу."), cased);
 check("lower-case occurrence stays lower case", cased.includes("улаанбаатар руу."), cased);
 check("no marks left once every occurrence is fixed", (await page.locator(".pad__marks mark").count()) === 0, cased);
-await shot("13b-casing.png");
+check("history records the whole replacement with a count", (await page.locator("#history-list .histentry__count").first().textContent()) === "×3", await page.locator("#history-list .histentry__count").first().textContent());
+await shot("09-casing.png");
 
-// ===== Large document with many errors: sidebar stays usable, requests bounded =====
+// ===== Large document: lazy suggestions, no request storms =====
+let suggestCount = 0;
 let inflight = 0;
 let maxInflight = 0;
-let suggestCount = 0;
 page.on("request", (r) => {
   if (!r.url().endsWith("/suggest")) return;
   suggestCount++;
@@ -418,140 +396,62 @@ page.on("requestfailed", (r) => r.url().endsWith("/suggest") && inflight--);
 const typoWord = "Уланбаатар";
 const bigText = Array.from({ length: 30 }, (_, i) => `Өгүүлбэр ${i + 1}: ${typoWord} хотод морь унаа байна.`).join("\n");
 await page.locator("#text").fill(bigText);
-await page.waitForSelector("#cards .card .chip", { timeout: 15000 });
-await page.waitForTimeout(1500);
-check("many occurrences still yield one card", (await page.locator("#cards .card").count()) === 1);
-check("occurrence counter reflects the whole document", /30 удаа/.test(await page.locator("#all-list .allrow__count").first().textContent()), await page.locator("#all-list .allrow__count").first().textContent());
-check("suggest requests stay bounded", maxInflight <= 6, { suggestCount, maxInflight });
-check("sidebar body scrolls instead of growing the page", await page.locator(".side__body").evaluate((el) => el.scrollHeight >= el.clientHeight));
-await shot("15-large-doc.png");
-
-// Replacing in a large document rewrites every occurrence.
-await page.locator("#cards .card .chip--best").click();
+await page.waitForSelector(".pad__marks mark", { timeout: 15000 });
+await page.waitForTimeout(1200);
+check("every occurrence of the repeated typo is highlighted", (await page.locator(".pad__marks mark").count()) === 30);
+check("no suggestion requests fire before a hover", suggestCount === 0, suggestCount);
+await hoverFirstMark();
+check("hover stays within one suggestion request", suggestCount <= 1 && maxInflight <= 1, { suggestCount, maxInflight });
+await pickRank(1);
 await page.waitForTimeout(1200);
 const bigAfter = await textValue();
 check("large document replacement keeps all lines", bigAfter.split("\n").length === 30, bigAfter.split("\n").length);
 check("large document replacement fixed every occurrence", !bigAfter.includes(typoWord), bigAfter.slice(0, 60));
 check("large document replacement is undoable", await page.locator("#undo-btn").isEnabled());
+check("history counts every occurrence in the large document", (await page.locator("#history-list .histentry__count").first().textContent()) === "×30");
 await page.locator("#undo-btn").click();
 await page.waitForTimeout(1200);
-check("undo restores the large document", (await textValue()).includes(typoWord));
+check("undo restores the large document typo", (await textValue()).includes(typoWord));
+await shot("10-large-doc.png");
 
-// ===== Responsive: mobile layout keeps the sidebar usable =====
-await page.locator("#text").fill("Монгол улс нь Уланбаатар хоттой, хүүнтай орон.");
-await page.waitForSelector("#cards .card .chip", { timeout: 8000 });
-await page.setViewportSize({ width: 390, height: 844 });
-await page.waitForTimeout(400);
-const noHorizontalScroll = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
-check("no horizontal overflow on mobile", noHorizontalScroll, await page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]));
-check("sidebar visible on mobile", await page.locator(".side").isVisible());
-check("cards still rendered on mobile", (await page.locator("#cards .card").count()) > 0);
-await page.screenshot({ path: new URL("14-mobile.png", SHOTS).pathname, fullPage: true });
-
-await page.setViewportSize({ width: 1440, height: 950 });
-await page.waitForTimeout(300);
-
-// ===== New Feature: Stats display sentences and reading time =====
-check("sentences stat visible", /өгүүлбэр/.test(await page.locator("#stat-sentences").textContent()));
-check("reading time stat visible", /мин/.test(await page.locator("#stat-reading").textContent()));
-check("copy all button visible", await page.locator("#copy-all-btn").isVisible());
-check("download button visible", await page.locator("#download-btn").isVisible());
-
-// ===== New Feature: Fix All (Бүгдийг засах) =====
+// ===== Fix all =====
 await page.locator("#clear-btn").click();
 await page.locator("#text").fill("Энд монгл болон саайн үгс байна.");
-await page.waitForSelector('#cards .card .pill:text-is("монгл")', { timeout: 8000 });
-await page.waitForSelector("#cards .card .chip", { timeout: 8000 });
-check("side bar visible when errors exist", await page.locator("#side-bar").isVisible());
-check("fix all button visible", await page.locator("#fix-all-btn").isVisible());
+await page.waitForSelector(".pad__marks mark", { timeout: 8000 });
+check("fix all enabled when errors exist", !(await page.locator("#fix-all-btn").isDisabled()));
+const beforeFixAll = await page.locator("#history-list .histentry").count();
 await page.locator("#fix-all-btn").click();
 await page.waitForTimeout(1500);
 const fixedAllText = await textValue();
-check("fix all replaces all errors with top suggestions", fixedAllText.includes("монгол") && fixedAllText.includes("сайн"), fixedAllText);
-check("cards cleared after fix all", (await page.locator("#cards .card").count()) === 0);
+check("fix all replaces all errors with top candidates", fixedAllText.includes("монгол") && fixedAllText.includes("сайн"), fixedAllText);
+check("fix all clears every mark", (await page.locator(".pad__marks mark").count()) === 0);
+check("fix all records both replacements in history", (await page.locator("#history-list .histentry").count()) === beforeFixAll + 2);
+check("fix all disabled again once clean", await page.locator("#fix-all-btn").isDisabled());
+await shot("11-fix-all.png");
 
-// ===== New Feature: Skip (Алгасах) =====
-await page.locator("#clear-btn").click();
-await page.locator("#text").fill("Шинэ нэр болох туршилтт гэж бичлээ.");
-await page.waitForSelector('#cards .card .pill:text-is("туршилтт")', { timeout: 8000 });
-const skipCard = page.locator("#cards .card").first();
-check("skip button available on card", await skipCard.locator('[data-role="skip"]').isVisible());
-await skipCard.locator('[data-role="skip"]').click();
-await page.waitForTimeout(400);
-check("skipped card removed from sidebar", (await page.locator("#cards .card").count()) === 0);
-const storedAfterSkip = await page.evaluate(() => JSON.parse(localStorage.getItem("sc-ignored-v1") || "[]"));
-check("skipped word NOT written to persistent storage", !storedAfterSkip.includes("туршилтт"), storedAfterSkip);
-check("status reports skipped", /алгаслаа/i.test(await page.locator("#status").textContent()));
-
-// ===== Hover suggestion card =====
-await page.locator("#clear-btn").click();
-await page.locator("#text").fill("Улаанбатар хотод амьдардаг.");
-await page.waitForSelector(".pad__marks mark", { timeout: 8000 });
-const hoverBox = await page.locator(".pad__marks mark").first().boundingBox();
-await page.mouse.move(hoverBox.x + hoverBox.width / 2, hoverBox.y + hoverBox.height / 2);
-await page.locator("#hover-card").waitFor({ state: "visible", timeout: 5000 });
-check("hovering a mark opens the suggestion card", await page.locator("#hover-card").isVisible());
-check(
-  "hover card names the hovered word",
-  (await page.locator('#hover-card [data-role="hoverword"]').textContent()) === "Улаанбатар",
-  await page.locator('#hover-card [data-role="hoverword"]').textContent()
-);
-await page.waitForSelector("#hover-card .chip", { timeout: 8000 });
-const hoverChips = await page.locator("#hover-card .chip").allTextContents();
-check("hover card offers suggestions", hoverChips.some((c) => c.includes("Улаанбаатар")), hoverChips);
-check("hovered word gets the is-hover highlight", (await page.locator(".pad__marks mark.is-hover").count()) === 1);
-await shot("16-hover-card.png");
-await page.locator("#hover-card .chip--best").click();
-await page.waitForTimeout(900);
-const hoverFixed = await textValue();
-check("hover chip replaces the word", hoverFixed.includes("Улаанбаатар") && !hoverFixed.includes("Улаанбатар"), hoverFixed);
-check("hover card closes after replacing", await page.locator("#hover-card").isHidden());
-
-// Hovering away hides the card again.
-await page.locator("#text").fill("Улаанбатар хотод амьдардаг.");
-await page.waitForSelector(".pad__marks mark", { timeout: 8000 });
-const hoverBox2 = await page.locator(".pad__marks mark").first().boundingBox();
-await page.mouse.move(hoverBox2.x + hoverBox2.width / 2, hoverBox2.y + hoverBox2.height / 2);
-await page.locator("#hover-card").waitFor({ state: "visible", timeout: 5000 });
-const padBox = await page.locator("#pad").boundingBox();
-await page.mouse.move(padBox.x + 6, padBox.y + 6);
-await page.waitForTimeout(600);
-check("hover card hides when the pointer leaves the word", await page.locator("#hover-card").isHidden());
-check("is-hover highlight cleared on leave", (await page.locator(".pad__marks mark.is-hover").count()) === 0);
-
-// ===== Case tools =====
+// ===== Case tools under the input =====
 await page.locator("#clear-btn").click();
 await page.locator("#text").fill("сайн байна уу? би монгол хэлээр ярьдаг. улаанбаатар хот.");
-await page.locator("#case-btn").click();
-check("case menu opens", await page.locator("#case-menu").isVisible());
-await page.keyboard.press("Escape");
-check("escape closes the case menu", await page.locator("#case-menu").isHidden());
-
-await page.locator("#case-btn").click();
-await page.locator('#case-menu [data-case="upper"]').click();
+const fmtButtons = await page.locator("#formatbar .fmtbtn").allTextContents();
+check("formatters render under the input", fmtButtons.length === 4, fmtButtons);
+await page.locator('#formatbar [data-case="upper"]').click();
 await page.waitForTimeout(700);
 let caseText = await textValue();
 check("uppercase converts the whole text", caseText === "САЙН БАЙНА УУ? БИ МОНГОЛ ХЭЛЭЭР ЯРЬДАГ. УЛААНБААТАР ХОТ.", caseText);
-
-await page.locator("#case-btn").click();
-await page.locator('#case-menu [data-case="lower"]').click();
+await page.locator('#formatbar [data-case="lower"]').click();
 await page.waitForTimeout(700);
 caseText = await textValue();
 check("lowercase converts the whole text", caseText === "сайн байна уу? би монгол хэлээр ярьдаг. улаанбаатар хот.", caseText);
-
-await page.locator("#case-btn").click();
-await page.locator('#case-menu [data-case="sentence"]').click();
+await page.locator('#formatbar [data-case="sentence"]').click();
 await page.waitForTimeout(700);
 caseText = await textValue();
 check("sentence case capitalizes sentence starts", caseText === "Сайн байна уу? Би монгол хэлээр ярьдаг. Улаанбаатар хот.", caseText);
-
-await page.locator("#case-btn").click();
-await page.locator('#case-menu [data-case="title"]').click();
+await page.locator('#formatbar [data-case="title"]').click();
 await page.waitForTimeout(700);
 caseText = await textValue();
 check("title case capitalizes every word", caseText === "Сайн Байна Уу? Би Монгол Хэлээр Ярьдаг. Улаанбаатар Хот.", caseText);
 check("case tools re-check the text", (await page.locator(".pad__marks mark").count()) === 0, caseText);
-await shot("17-case-tools.png");
+await shot("12-case-tools.png");
 
 // Selection-only transforms.
 await page.locator("#text").fill("сайн байна уу? би монгол хэлээр ярьдаг.");
@@ -559,8 +459,7 @@ await page.locator("#text").evaluate((el) => {
   el.focus();
   el.setSelectionRange(0, 10);
 });
-await page.locator("#case-btn").click();
-await page.locator('#case-menu [data-case="upper"]').click();
+await page.locator('#formatbar [data-case="upper"]').click();
 await page.waitForTimeout(700);
 caseText = await textValue();
 check("case tool applies to the selection only", caseText === "САЙН БАЙНА уу? би монгол хэлээр ярьдаг.", caseText);
@@ -573,18 +472,40 @@ await page.locator("#undo-btn").click();
 await page.waitForTimeout(900);
 check("case transform is undoable", (await textValue()) === "сайн байна уу? би монгол хэлээр ярьдаг.");
 
+// ===== Stats / copy / download =====
+check("sentences stat visible", /өгүүлбэр/.test(await page.locator("#stat-sentences").textContent()));
+check("reading time stat visible", /мин/.test(await page.locator("#stat-reading").textContent()));
+check("copy all button visible", await page.locator("#copy-all-btn").isVisible());
+check("download button visible", await page.locator("#download-btn").isVisible());
+
+// ===== Responsive: mobile layout keeps the panel usable =====
+await page.locator("#text").fill("Монгол улс нь Уланбаатар хоттой, хүүнтэй орон.");
+await page.waitForSelector(".pad__marks mark", { timeout: 8000 });
+await page.setViewportSize({ width: 390, height: 844 });
+await page.waitForTimeout(400);
+const noHorizontalScroll = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
+check("no horizontal overflow on mobile", noHorizontalScroll, await page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]));
+check("sidebar visible on mobile", await page.locator(".side").isVisible());
+check("history stays visible on mobile", (await page.locator("#history-list .histentry").count()) > 0);
+await page.screenshot({ path: new URL("13-mobile.png", SHOTS).pathname, fullPage: true });
+await page.setViewportSize({ width: 1440, height: 950 });
+await page.waitForTimeout(300);
+
 // ===== Report =====
-const failed = results.filter((r) => !r.pass);
 check("no page errors", errors.length === 0, errors);
+const failed = results.filter((r) => !r.pass);
 
 console.log(JSON.stringify({
   summary: { total: results.length, passed: results.length - failed.length, failed: failed.length },
   failures: failed,
   pageErrors: errors,
   marks,
-  cards,
 }, null, 1));
 
 await browser.close();
 server.kill("SIGKILL");
 if (failed.length) process.exitCode = 1;
+
+
+
+

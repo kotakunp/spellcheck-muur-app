@@ -8,20 +8,19 @@ Private drop-in replacement for the `spellcheck.mn` (Болорспелл) check
 npm install
 npm start          # http://127.0.0.1:3456  (PORT / HOST env to change; defaults to 127.0.0.1)
 npm test           # 31 API + static-route assertions
-npm run ui         # 149 Playwright assertions on the UI, writes scripts/shots/*.png
+npm run ui         # 127 Playwright assertions on the UI, writes scripts/shots/*.png
 ```
 
 ## Web UI
 
-`http://localhost:3456/` — type or paste text, drop in a file; misspellings get a calm red wavy underline, a hover popover, and a suggestion card in the sidebar.
+`http://localhost:3456/` — type or paste text, drop in a file; every misspelling is highlighted at once, hover (or tap) one for ranked candidates, and the sidebar keeps a log of every replacement.
 
-- **Sidebar cards** — one card per misspelled word with up to 6 suggestion chips. The green chip is the top pick (`↵`); clicking any chip replaces **every** occurrence, keeping each occurrence's own casing (`Уланбаатар → Улаанбаатар`, `УЛАНБААТАР → УЛААНБААТАР`, `уланбаатар → улаанбаатар`). Cards also carry a short "тайлбар" note, a copy button for the corrected word, and `‹ ›` buttons to walk through the errors.
-- **Hover card** — hovering a misspelled word highlights every occurrence (soft tint) and opens a compact popover right next to it with the top suggestions; click a chip to fix all occurrences at once, or click the word pill to select it and jump to its sidebar card. Moving away fades it out.
-- **Хэлбэр (case tools)** — the *Хэлбэр* menu applies **БҮГД ТОМ** (UPPERCASE), **бүгд жижиг** (lowercase), **Өгүүлбэрийн хэлбэр** (Sentence case) or **Үг бүрийн эх үсэг** (Title Case) to the selected text — or to the whole text when nothing is selected. Each transform is undoable, preserves the selection, and re-checks automatically.
-- **Tabs** — *Санал* shows the cards, *Бүх алдаа* lists the same words with occurrence counts and an arrow that jumps back to the card.
-- **Бүгдийг засах (Fix All)** — batch-applies top suggestions for every error in the document with one click.
-- **Click a flagged word** in the text to select it and focus its card, or press the highlighted occurrence to jump there.
-- **Алгасах & Тольд нэмэх** — *Алгасах* skips the error in the current session; *Тольд нэмэх* adds the word permanently to your personal dictionary (stored in browser `localStorage`); *Тохиргоо → Тольд нэмсэн үгсийг цэвэрлэх* resets it.
+- **Highlight everything at once** — every misspelled word in the document is highlighted simultaneously (soft red tint + wavy underline); the word under the pointer gets a stronger tint across all of its occurrences.
+- **Hover / tap candidates** — hovering (or clicking/tapping) a misspelled word opens a compact ranked list of up to 6 candidates right next to it — just the candidates, no explanations. Click one to replace **every** occurrence at once, keeping each occurrence's own casing (`Уланбаатар → Улаанбаатар`, `УЛАНБААТАР → УЛААНБААТАР`, `уланбаатар → улаанбаатар`). The card also offers *Алгасах* and *Тольд нэмэх*.
+- **Солилтын түүх (replacement history)** — the sidebar logs every replacement as `wrong → right` with per-occurrence `×n` counts and a timestamp; *Цэвэрлэх* empties the log. Session-only, never leaves the browser.
+- **Хэлбэр (case tools under the input)** — four buttons apply **БҮГД ТОМ** (UPPERCASE), **бүгд жижиг** (lowercase), **Өгүүлбэрийн хэлбэр** (Sentence case) or **Үг бүрийн эх үсэг** (Title Case) to the selected text — or to the whole text when nothing is selected. Each transform is undoable, preserves the selection, and re-checks automatically.
+- **Бүгдийг засах (Fix All)** — under the input; batch-applies the top candidate for every error in one click (disabled while the text is clean).
+- **Алгасах & Тольд нэмэх** — available on the hover card: *Алгасах* skips the error for the current session; *Тольд нэмэх* adds the word permanently to your personal dictionary (stored in browser `localStorage`); *Тохиргоо → Тольд нэмсэн үгсийг цэвэрлэх* resets it.
 - **Хуулах / Татах** — 1-click clipboard copy of the entire text and direct export as a `.txt` file.
 - **Stats** — live word, character, sentence counts, and estimated reading time.
 - **Буцаах / Дахин хийх** — undo/redo for edits, sample loads, and file imports (last 100 states).
