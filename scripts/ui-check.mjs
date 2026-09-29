@@ -483,6 +483,96 @@ const storedAfterSkip = await page.evaluate(() => JSON.parse(localStorage.getIte
 check("skipped word NOT written to persistent storage", !storedAfterSkip.includes("туршилтт"), storedAfterSkip);
 check("status reports skipped", /алгаслаа/i.test(await page.locator("#status").textContent()));
 
+// ===== Hover suggestion card =====
+await page.locator("#clear-btn").click();
+await page.locator("#text").fill("Улаанбатар хотод амьдардаг.");
+await page.waitForSelector(".pad__marks mark", { timeout: 8000 });
+const hoverBox = await page.locator(".pad__marks mark").first().boundingBox();
+await page.mouse.move(hoverBox.x + hoverBox.width / 2, hoverBox.y + hoverBox.height / 2);
+await page.locator("#hover-card").waitFor({ state: "visible", timeout: 5000 });
+check("hovering a mark opens the suggestion card", await page.locator("#hover-card").isVisible());
+check(
+  "hover card names the hovered word",
+  (await page.locator('#hover-card [data-role="hoverword"]').textContent()) === "Улаанбатар",
+  await page.locator('#hover-card [data-role="hoverword"]').textContent()
+);
+await page.waitForSelector("#hover-card .chip", { timeout: 8000 });
+const hoverChips = await page.locator("#hover-card .chip").allTextContents();
+check("hover card offers suggestions", hoverChips.some((c) => c.includes("Улаанбаатар")), hoverChips);
+check("hovered word gets the is-hover highlight", (await page.locator(".pad__marks mark.is-hover").count()) === 1);
+await shot("16-hover-card.png");
+await page.locator("#hover-card .chip--best").click();
+await page.waitForTimeout(900);
+const hoverFixed = await textValue();
+check("hover chip replaces the word", hoverFixed.includes("Улаанбаатар") && !hoverFixed.includes("Улаанбатар"), hoverFixed);
+check("hover card closes after replacing", await page.locator("#hover-card").isHidden());
+
+// Hovering away hides the card again.
+await page.locator("#text").fill("Улаанбатар хотод амьдардаг.");
+await page.waitForSelector(".pad__marks mark", { timeout: 8000 });
+const hoverBox2 = await page.locator(".pad__marks mark").first().boundingBox();
+await page.mouse.move(hoverBox2.x + hoverBox2.width / 2, hoverBox2.y + hoverBox2.height / 2);
+await page.locator("#hover-card").waitFor({ state: "visible", timeout: 5000 });
+const padBox = await page.locator("#pad").boundingBox();
+await page.mouse.move(padBox.x + 6, padBox.y + 6);
+await page.waitForTimeout(600);
+check("hover card hides when the pointer leaves the word", await page.locator("#hover-card").isHidden());
+check("is-hover highlight cleared on leave", (await page.locator(".pad__marks mark.is-hover").count()) === 0);
+
+// ===== Case tools =====
+await page.locator("#clear-btn").click();
+await page.locator("#text").fill("сайн байна уу? би монгол хэлээр ярьдаг. улаанбаатар хот.");
+await page.locator("#case-btn").click();
+check("case menu opens", await page.locator("#case-menu").isVisible());
+await page.keyboard.press("Escape");
+check("escape closes the case menu", await page.locator("#case-menu").isHidden());
+
+await page.locator("#case-btn").click();
+await page.locator('#case-menu [data-case="upper"]').click();
+await page.waitForTimeout(700);
+let caseText = await textValue();
+check("uppercase converts the whole text", caseText === "САЙН БАЙНА УУ? БИ МОНГОЛ ХЭЛЭЭР ЯРЬДАГ. УЛААНБААТАР ХОТ.", caseText);
+
+await page.locator("#case-btn").click();
+await page.locator('#case-menu [data-case="lower"]').click();
+await page.waitForTimeout(700);
+caseText = await textValue();
+check("lowercase converts the whole text", caseText === "сайн байна уу? би монгол хэлээр ярьдаг. улаанбаатар хот.", caseText);
+
+await page.locator("#case-btn").click();
+await page.locator('#case-menu [data-case="sentence"]').click();
+await page.waitForTimeout(700);
+caseText = await textValue();
+check("sentence case capitalizes sentence starts", caseText === "Сайн байна уу? Би монгол хэлээр ярьдаг. Улаанбаатар хот.", caseText);
+
+await page.locator("#case-btn").click();
+await page.locator('#case-menu [data-case="title"]').click();
+await page.waitForTimeout(700);
+caseText = await textValue();
+check("title case capitalizes every word", caseText === "Сайн Байна Уу? Би Монгол Хэлээр Ярьдаг. Улаанбаатар Хот.", caseText);
+check("case tools re-check the text", (await page.locator(".pad__marks mark").count()) === 0, caseText);
+await shot("17-case-tools.png");
+
+// Selection-only transforms.
+await page.locator("#text").fill("сайн байна уу? би монгол хэлээр ярьдаг.");
+await page.locator("#text").evaluate((el) => {
+  el.focus();
+  el.setSelectionRange(0, 10);
+});
+await page.locator("#case-btn").click();
+await page.locator('#case-menu [data-case="upper"]').click();
+await page.waitForTimeout(700);
+caseText = await textValue();
+check("case tool applies to the selection only", caseText === "САЙН БАЙНА уу? би монгол хэлээр ярьдаг.", caseText);
+const selectionAfterCase = await page.evaluate(() => {
+  const el = document.getElementById("text");
+  return el.value.slice(el.selectionStart, el.selectionEnd);
+});
+check("selection survives the transform", selectionAfterCase === "САЙН БАЙНА", selectionAfterCase);
+await page.locator("#undo-btn").click();
+await page.waitForTimeout(900);
+check("case transform is undoable", (await textValue()) === "сайн байна уу? би монгол хэлээр ярьдаг.");
+
 // ===== Report =====
 const failed = results.filter((r) => !r.pass);
 check("no page errors", errors.length === 0, errors);

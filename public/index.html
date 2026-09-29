@@ -68,6 +68,19 @@
             </button>
           </div>
 
+          <span class="popwrap">
+            <button type="button" class="tool-btn" id="case-btn" aria-haspopup="true" aria-expanded="false">
+              Хэлбэр
+              <svg class="ic ic--14" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></svg>
+            </button>
+            <div class="menu" id="case-menu" hidden>
+              <button type="button" class="menu__item" data-case="upper">БҮГД ТОМ <span class="menu__hint">АААА</span></button>
+              <button type="button" class="menu__item" data-case="lower">бүгд жижиг <span class="menu__hint">аааа</span></button>
+              <button type="button" class="menu__item" data-case="sentence">Өгүүлбэрийн хэлбэр <span class="menu__hint">Аааа</span></button>
+              <button type="button" class="menu__item" data-case="title">Үг бүрийн эх үсэг <span class="menu__hint">Аааа Аааа</span></button>
+            </div>
+          </span>
+
           <div class="stats" aria-live="polite">
             <span id="stat-words">0 үг</span>
             <span class="stats__sep">|</span>
@@ -154,6 +167,8 @@
         </div>
       </aside>
     </main>
+
+    <div class="hovercard" id="hover-card" hidden></div>
 
     <script src="/app.js"></script>
   </body>

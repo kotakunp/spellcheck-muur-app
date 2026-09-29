@@ -33,6 +33,9 @@ const settingsBtn = document.getElementById("settings-btn");
 const settingsMenu = document.getElementById("settings-menu");
 const themeToggle = document.getElementById("theme-toggle");
 const clearDictBtn = document.getElementById("clear-dict");
+const caseBtn = document.getElementById("case-btn");
+const caseMenu = document.getElementById("case-menu");
+const hoverCardEl = document.getElementById("hover-card");
 
 const API = "/cms-client/modules/spellchecker";
 const CYRILLIC = /[\u0400-\u04FF]+/g;
@@ -172,6 +175,7 @@ function paintMarks(value, flagged) {
 }
 
 function paint() {
+  hideHoverCard();
   const value = textEl.value;
   const flagged = new Set(misspellings.map((word) => word.toLowerCase()));
   paintMarks(value, flagged);
@@ -636,6 +640,58 @@ function downloadText() {
   setStatus("Текстийг файл болгон татлаа.");
 }
 
+// ===== Case tools =====
+const CASE_LABELS = {
+  upper: "БҮГД ТОМ",
+  lower: "бүгд жижиг",
+  sentence: "Өгүүлбэрийн хэлбэр",
+  title: "Үг бүрийн эх үсэг",
+};
+
+function transformCase(value, mode) {
+  if (mode === "upper") return value.toUpperCase();
+  if (mode === "lower") return value.toLowerCase();
+  if (mode === "sentence") {
+    // Lowercase everything, then lift the first letter of each sentence
+    // (at the start, after . ! ? … or after a line break).
+    return value
+      .toLowerCase()
+      .replace(/(^\s*|[.!?…]+\s+|\n\s*)([а-яёөү])/g, (_, lead, ch) => lead + ch.toUpperCase());
+  }
+  if (mode === "title") {
+    return value.toLowerCase().replace(/([а-яёөүa-z])([а-яёөүa-z]*)/g, (_, first, rest) => first.toUpperCase() + rest);
+  }
+  return value;
+}
+
+// Applies to the selection, or to the whole text when nothing is selected.
+function applyCase(mode) {
+  const value = textEl.value;
+  if (!value.trim() || !CASE_LABELS[mode]) return;
+  const start = textEl.selectionStart;
+  const end = textEl.selectionEnd;
+  const hasSelection = end > start;
+  const segment = hasSelection ? value.slice(start, end) : value;
+  const next = transformCase(segment, mode);
+  if (next === segment) {
+    setStatus(`«${CASE_LABELS[mode]}» — өөрчлөх зүйл олдсонгүй.`);
+    return;
+  }
+  commitHistory();
+  textEl.value = hasSelection ? value.slice(0, start) + next + value.slice(end) : next;
+  commitHistory();
+  textEl.focus();
+  if (hasSelection) textEl.setSelectionRange(start, start + next.length);
+  fit();
+  updateStats();
+  runCheck();
+  setStatus(
+    hasSelection
+      ? `Сонгосон хэсгийг «${CASE_LABELS[mode]}» болголоо.`
+      : `Бүх текстийг «${CASE_LABELS[mode]}» болголоо.`
+  );
+}
+
 // ===== Undo / redo history =====
 function commitHistory() {
   if (histTimer) {
@@ -777,6 +833,8 @@ function closeMenus() {
   samplesBtn.setAttribute("aria-expanded", "false");
   settingsMenu.hidden = true;
   settingsBtn.setAttribute("aria-expanded", "false");
+  caseMenu.hidden = true;
+  caseBtn.setAttribute("aria-expanded", "false");
 }
 
 function toggleMenu(menu, button) {
@@ -830,8 +888,152 @@ function initTheme() {
   applyTheme(stored === "dark" || stored === "light" ? stored : null);
 }
 
+// ===== Hover suggestion card =====
+let hoverHideTimer = null;
+let hoverWord = null;
+let hoverDisplay = "";
+let hoverRect = null;
+let hoverToken = 0;
+let lastHoverMark = null;
+let hoverRaf = 0;
+let hoverPoint = null;
+
+function setHoverHighlight(word) {
+  const key = word ? word.toLowerCase() : null;
+  if (key === hoverWord) return;
+  hoverWord = key;
+  marksEl.querySelectorAll("mark.is-hover").forEach((el) => el.classList.remove("is-hover"));
+  if (key) {
+    for (const mark of marksEl.querySelectorAll("mark")) {
+      if (mark.dataset.word.toLowerCase() === key) mark.classList.add("is-hover");
+    }
+  }
+  padEl.classList.toggle("is-over-mark", !!key);
+}
+
+function hideHoverCard() {
+  if (hoverHideTimer) {
+    clearTimeout(hoverHideTimer);
+    hoverHideTimer = null;
+  }
+  hoverPoint = null;
+  hoverToken++;
+  lastHoverMark = null;
+  hoverRect = null;
+  hoverDisplay = "";
+  setHoverHighlight(null);
+  hoverCardEl.hidden = true;
+}
+
+// Small grace period so the pointer can travel from the word onto the card.
+function scheduleHoverHide() {
+  if (hoverHideTimer) clearTimeout(hoverHideTimer);
+  hoverHideTimer = setTimeout(() => {
+    hoverHideTimer = null;
+    hideHoverCard();
+  }, 240);
+}
+
+function placeHoverCard(rect) {
+  hoverCardEl.style.visibility = "hidden";
+  hoverCardEl.hidden = false;
+  const card = hoverCardEl.getBoundingClientRect();
+  const gap = 8;
+  const top =
+    rect.bottom + gap + card.height > window.innerHeight - 8
+      ? Math.max(8, rect.top - card.height - gap)
+      : rect.bottom + gap;
+  const left = Math.min(Math.max(8, rect.left + rect.width / 2 - card.width / 2), window.innerWidth - card.width - 8);
+  hoverCardEl.style.top = `${Math.round(top)}px`;
+  hoverCardEl.style.left = `${Math.round(left)}px`;
+  hoverCardEl.style.visibility = "";
+}
+
+async function fillHoverCard(word) {
+  const token = ++hoverToken;
+  hoverCardEl.hidden = false;
+  hoverCardEl.textContent = "";
+  const head = document.createElement("div");
+  head.className = "hovercard__head";
+  const pill = document.createElement("span");
+  pill.className = "pill";
+  pill.dataset.role = "hoverword";
+  pill.textContent = word;
+  head.append(pill);
+  const chips = document.createElement("div");
+  chips.className = "chips";
+  chips.dataset.role = "hoverchips";
+  const hint = document.createElement("span");
+  hint.className = "card__hint";
+  hint.textContent = "Санал хайж байна…";
+  chips.append(hint);
+  hoverCardEl.append(head, chips);
+  if (hoverRect) placeHoverCard(hoverRect);
+  const list = await loadSuggestions(word);
+  if (token !== hoverToken || hoverCardEl.hidden) return;
+  chips.textContent = "";
+  if (!list.length) {
+    hint.textContent = "Санал олдсонгүй.";
+    chips.append(hint);
+  } else {
+    list.slice(0, 6).forEach((suggestion, i) => {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = i === 0 ? "chip chip--best" : "chip";
+      chip.dataset.sug = suggestion;
+      chip.textContent = suggestion;
+      if (i === 0) {
+        const enter = document.createElement("span");
+        enter.className = "chip__enter";
+        enter.textContent = "↵";
+        chip.append(enter);
+      }
+      chips.append(chip);
+    });
+  }
+  if (hoverRect && !hoverCardEl.hidden) placeHoverCard(hoverRect);
+}
+
+function showHoverFor(mark) {
+  const word = mark.dataset.word;
+  const rect = mark.getClientRects()[0];
+  if (!rect) return;
+  const sameWordShown = !hoverCardEl.hidden && hoverDisplay.toLowerCase() === word.toLowerCase();
+  setHoverHighlight(word);
+  hoverRect = rect;
+  if (sameWordShown) {
+    placeHoverCard(rect);
+    return;
+  }
+  hoverDisplay = word;
+  fillHoverCard(word);
+}
+
+function updateHover(x, y) {
+  const mark = markAt(x, y);
+  if (mark === lastHoverMark) {
+    if (hoverHideTimer) {
+      clearTimeout(hoverHideTimer);
+      hoverHideTimer = null;
+    }
+    return;
+  }
+  lastHoverMark = mark;
+  if (!mark) {
+    setHoverHighlight(null);
+    scheduleHoverHide();
+    return;
+  }
+  if (hoverHideTimer) {
+    clearTimeout(hoverHideTimer);
+    hoverHideTimer = null;
+  }
+  showHoverFor(mark);
+}
+
 // ===== Events =====
 textEl.addEventListener("input", () => {
+  hideHoverCard();
   fit();
   updateStats();
   scheduleHistory();
@@ -842,6 +1044,7 @@ textEl.addEventListener("paste", () => {
   setTimeout(runCheck, 0);
 });
 textEl.addEventListener("scroll", () => {
+  hideHoverCard();
   marksEl.scrollTop = textEl.scrollTop;
   marksEl.scrollLeft = textEl.scrollLeft;
 });
@@ -855,6 +1058,43 @@ padEl.addEventListener("click", (event) => {
   if (index < 0) return;
   selectWordInText(word);
   setActive(index, { scrollText: false });
+});
+
+// Hovering a flagged word highlights every occurrence and opens the quick
+// suggestion card; rAF-throttled so dense documents stay smooth.
+padEl.addEventListener("mousemove", (event) => {
+  hoverPoint = { x: event.clientX, y: event.clientY };
+  if (hoverRaf) return;
+  hoverRaf = requestAnimationFrame(() => {
+    hoverRaf = 0;
+    if (hoverPoint) updateHover(hoverPoint.x, hoverPoint.y);
+  });
+});
+
+padEl.addEventListener("mouseleave", scheduleHoverHide);
+
+hoverCardEl.addEventListener("mouseenter", () => {
+  if (hoverHideTimer) {
+    clearTimeout(hoverHideTimer);
+    hoverHideTimer = null;
+  }
+});
+hoverCardEl.addEventListener("mouseleave", scheduleHoverHide);
+hoverCardEl.addEventListener("click", (event) => {
+  const chip = event.target.closest(".chip");
+  if (chip && chip.dataset.sug && hoverDisplay) {
+    replaceWord(hoverDisplay, chip.dataset.sug);
+    hideHoverCard();
+    return;
+  }
+  if (event.target.closest('[data-role="hoverword"]') && hoverDisplay) {
+    const index = misspellings.findIndex((item) => item.toLowerCase() === hoverDisplay.toLowerCase());
+    if (index >= 0) {
+      selectWordInText(hoverDisplay);
+      setActive(index, { scrollText: false });
+    }
+    hideHoverCard();
+  }
 });
 
 // Card interactions: suggestion chips, ignore, copy, prev/next navigation.
@@ -933,6 +1173,16 @@ settingsBtn.addEventListener("click", (event) => {
   event.stopPropagation();
   toggleMenu(settingsMenu, settingsBtn);
 });
+caseBtn.addEventListener("click", (event) => {
+  event.stopPropagation();
+  toggleMenu(caseMenu, caseBtn);
+});
+caseMenu.addEventListener("click", (event) => {
+  const item = event.target.closest("[data-case]");
+  if (!item) return;
+  closeMenus();
+  applyCase(item.dataset.case);
+});
 document.addEventListener("click", (event) => {
   if (!event.target.closest(".popwrap")) closeMenus();
 });
@@ -975,7 +1225,10 @@ fileInput.addEventListener("change", () => {
   fileInput.value = "";
 });
 
-window.addEventListener("resize", fit);
+window.addEventListener("resize", () => {
+  fit();
+  hideHoverCard();
+});
 
 // ===== Init =====
 buildSamplesMenu();

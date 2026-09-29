@@ -8,14 +8,16 @@ Private drop-in replacement for the `spellcheck.mn` (Болорспелл) check
 npm install
 npm start          # http://127.0.0.1:3456  (PORT / HOST env to change; defaults to 127.0.0.1)
 npm test           # 31 API + static-route assertions
-npm run ui         # 131 Playwright assertions on the UI, writes scripts/shots/*.png
+npm run ui         # 149 Playwright assertions on the UI, writes scripts/shots/*.png
 ```
 
 ## Web UI
 
-`http://localhost:3456/` — type or paste text, drop in a file; misspellings get a red wavy underline and a suggestion card in the sidebar.
+`http://localhost:3456/` — type or paste text, drop in a file; misspellings get a calm red wavy underline, a hover popover, and a suggestion card in the sidebar.
 
 - **Sidebar cards** — one card per misspelled word with up to 6 suggestion chips. The green chip is the top pick (`↵`); clicking any chip replaces **every** occurrence, keeping each occurrence's own casing (`Уланбаатар → Улаанбаатар`, `УЛАНБААТАР → УЛААНБААТАР`, `уланбаатар → улаанбаатар`). Cards also carry a short "тайлбар" note, a copy button for the corrected word, and `‹ ›` buttons to walk through the errors.
+- **Hover card** — hovering a misspelled word highlights every occurrence (soft tint) and opens a compact popover right next to it with the top suggestions; click a chip to fix all occurrences at once, or click the word pill to select it and jump to its sidebar card. Moving away fades it out.
+- **Хэлбэр (case tools)** — the *Хэлбэр* menu applies **БҮГД ТОМ** (UPPERCASE), **бүгд жижиг** (lowercase), **Өгүүлбэрийн хэлбэр** (Sentence case) or **Үг бүрийн эх үсэг** (Title Case) to the selected text — or to the whole text when nothing is selected. Each transform is undoable, preserves the selection, and re-checks automatically.
 - **Tabs** — *Санал* shows the cards, *Бүх алдаа* lists the same words with occurrence counts and an arrow that jumps back to the card.
 - **Бүгдийг засах (Fix All)** — batch-applies top suggestions for every error in the document with one click.
 - **Click a flagged word** in the text to select it and focus its card, or press the highlighted occurrence to jump there.
