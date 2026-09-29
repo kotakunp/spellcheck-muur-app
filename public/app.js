@@ -959,23 +959,6 @@ function initLanding() {
     );
     revealables.forEach((el) => io.observe(el));
   }
-
-  const counter = document.querySelector("[data-count]");
-  if (!counter) return;
-  const target = Number(counter.dataset.count) || 0;
-  if (reduced) {
-    counter.textContent = formatNum(target);
-    return;
-  }
-  const start = performance.now();
-  const DURATION = 1500;
-  const tick = (now) => {
-    const p = Math.min(1, (now - start) / DURATION);
-    const eased = 1 - Math.pow(1 - p, 3);
-    counter.textContent = formatNum(Math.round(target * eased));
-    if (p < 1) requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
 }
 
 // ===== Init =====

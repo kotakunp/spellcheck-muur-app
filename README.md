@@ -13,7 +13,7 @@ npm run ui         # 142 Playwright assertions on the UI, writes scripts/shots/*
 
 ## Web UI
 
-One page for both the marketing site and the tool: sticky nav → dark hero with drifting glows and a count-up stats strip → **the live app inside a browser-style frame** (the "screenshot" section is the actual working editor, not an image) → feature grid → 3-step how-it-works → CTA band → footer, all in `public/index.html`. Sections reveal on scroll with staggered fade/slide animations, menus and the hover card pop in, the newest replacement slides into the history panel, and every animation is disabled under `prefers-reduced-motion`.
+One page for both the marketing site and the tool: sticky nav → dark hero title → **the live app inside a browser-style frame** (the "screenshot" section is the actual working editor, not an image) → feature grid → 3-step how-it-works → CTA band → footer, all in `public/index.html`. Sections reveal on scroll with staggered fade/slide animations, menus and the hover card pop in, the newest replacement slides into the history panel, and every animation is disabled under `prefers-reduced-motion`.
 
 `http://localhost:3456/` — type or paste text, drop in a file; every misspelling is highlighted at once, hover (or tap) one for ranked candidates, and the sidebar keeps a log of every replacement.
 
