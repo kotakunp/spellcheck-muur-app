@@ -8,7 +8,7 @@ Private drop-in replacement for the `spellcheck.mn` (Болорспелл) check
 npm install
 npm start          # http://127.0.0.1:3456  (PORT / HOST env to change; defaults to 127.0.0.1)
 npm test           # 31 API + static-route assertions
-npm run ui         # 127 Playwright assertions on the UI, writes scripts/shots/*.png
+npm run ui         # 132 Playwright assertions on the UI, writes scripts/shots/*.png
 ```
 
 ## Web UI

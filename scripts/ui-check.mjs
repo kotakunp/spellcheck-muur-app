@@ -453,6 +453,30 @@ check("title case capitalizes every word", caseText === "Сайн Байна У�
 check("case tools re-check the text", (await page.locator(".pad__marks mark").count()) === 0, caseText);
 await shot("12-case-tools.png");
 
+// Sentence/title case must handle Latin (English) text too.
+await page.locator("#clear-btn").click();
+await page.locator("#text").fill("hello world. my name is james. how are you?");
+await page.locator('#formatbar [data-case="sentence"]').click();
+await page.waitForTimeout(700);
+caseText = await textValue();
+check("sentence case capitalizes English sentences", caseText === "Hello world. My name is james. How are you?", caseText);
+await page.locator('#formatbar [data-case="title"]').click();
+await page.waitForTimeout(700);
+caseText = await textValue();
+check("title case capitalizes English words", caseText === "Hello World. My Name Is James. How Are You?", caseText);
+await page.locator('#formatbar [data-case="upper"]').click();
+await page.waitForTimeout(700);
+caseText = await textValue();
+check("uppercase handles English text", caseText === "HELLO WORLD. MY NAME IS JAMES. HOW ARE YOU?", caseText);
+await page.locator('#formatbar [data-case="lower"]').click();
+await page.waitForTimeout(700);
+caseText = await textValue();
+check("lowercase handles English text", caseText === "hello world. my name is james. how are you?", caseText);
+await page.locator('#formatbar [data-case="sentence"]').click();
+await page.waitForTimeout(700);
+caseText = await textValue();
+check("sentence case is repeatable on English text", caseText === "Hello world. My name is james. How are you?", caseText);
+
 // Selection-only transforms.
 await page.locator("#text").fill("сайн байна уу? би монгол хэлээр ярьдаг.");
 await page.locator("#text").evaluate((el) => {

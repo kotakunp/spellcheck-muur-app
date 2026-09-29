@@ -405,10 +405,11 @@ function transformCase(value, mode) {
   if (mode === "lower") return value.toLowerCase();
   if (mode === "sentence") {
     // Lowercase everything, then lift the first letter of each sentence
-    // (at the start, after . ! ? … or after a line break).
+    // (at the start, after . ! ? … or after a line break). The class covers
+    // Cyrillic AND Latin, so English sentences re-capitalize too.
     return value
       .toLowerCase()
-      .replace(/(^\s*|[.!?…]+\s+|\n\s*)([а-яёөү])/g, (_, lead, ch) => lead + ch.toUpperCase());
+      .replace(/(^\s*|[.!?…]+\s+|\n\s*)([а-яёөүa-z])/g, (_, lead, ch) => lead + ch.toUpperCase());
   }
   if (mode === "title") {
     return value.toLowerCase().replace(/([а-яёөүa-z])([а-яёөүa-z]*)/g, (_, first, rest) => first.toUpperCase() + rest);
