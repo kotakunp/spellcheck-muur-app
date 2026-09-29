@@ -102,6 +102,8 @@ const textValue = () => page.locator("#text").inputValue();
 
 // Marks render behind the textarea, so drive hover through raw mouse moves.
 async function hoverMark(locator) {
+  await page.locator("#pad").scrollIntoViewIfNeeded();
+  await page.waitForTimeout(150);
   const box = await locator.boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.locator("#hover-card").waitFor({ state: "visible", timeout: 6000 });
@@ -116,6 +118,23 @@ async function hoverFirstMark() {
 const pickRank = (n = 1) => page.locator("#hover-card .rank__item").nth(n - 1).click();
 
 await page.goto(BASE, { waitUntil: "networkidle" });
+
+// ===== Landing: single page hosts both marketing and the live app =====
+check("hero headline rendered", (await page.locator(".hero__title").textContent()) === "Алдаа шалгагч");
+check("nav CTA present", await page.locator("#nav-cta").isVisible());
+check("feature cards render", (await page.locator(".feat").count()) === 6);
+check("how-it-works steps render", (await page.locator(".step").count()) === 3);
+check("footer rendered", (await page.locator(".foot").count()) === 1);
+check("app lives inside the landing page", (await page.locator('#app #text').count()) === 1);
+await shot("00-hero.png");
+
+// Nav CTA smooth-scrolls down to the embedded app.
+await page.locator("#nav-cta").click();
+await page.waitForTimeout(1200);
+check("nav CTA scrolls the app into view", await page.evaluate(() => {
+  const r = document.getElementById("text").getBoundingClientRect();
+  return r.top > -120 && r.top < window.innerHeight;
+}));
 
 // ===== Empty state: no cards anywhere, replacement history empty =====
 check("empty state visible", await page.locator("#empty").isVisible());
@@ -286,7 +305,7 @@ check("shortcut keeps results in sync", (await page.locator(".pad__marks mark").
 // ===== Stylesheet sanity: every rule must be top level (only @media may nest) =====
 const cssHealth = await page.evaluate(() => {
   const sheet = [...document.styleSheets].find((s) => s.href?.includes("styles.css"));
-  const nested = [...sheet.cssRules].filter((r) => !r.conditionText && r.cssRules && r.cssRules.length > 0).map((r) => r.selectorText);
+  const nested = [...sheet.cssRules].filter((r) => r.selectorText && r.cssRules && r.cssRules.length > 0).map((r) => r.selectorText);
   const side = document.querySelector(".side").getBoundingClientRect();
   const editor = document.querySelector(".editor").getBoundingClientRect();
   const layout = getComputedStyle(document.querySelector(".layout"));
@@ -501,6 +520,25 @@ check("sentences stat visible", /өгүүлбэр/.test(await page.locator("#sta
 check("reading time stat visible", /мин/.test(await page.locator("#stat-reading").textContent()));
 check("copy all button visible", await page.locator("#copy-all-btn").isVisible());
 check("download button visible", await page.locator("#download-btn").isVisible());
+
+// ===== Landing sections reveal on scroll =====
+await page.locator("#features").scrollIntoViewIfNeeded();
+await page.waitForTimeout(1100);
+check("landing sections reveal on scroll", (await page.locator(".reveal.is-visible").count()) > 0);
+check("all six feature cards are revealed", (await page.locator(".feat.is-visible").count()) === 6, await page.locator(".feat.is-visible").count());
+await shot("14-features.png");
+await page.locator(".foot").scrollIntoViewIfNeeded();
+await page.waitForTimeout(800);
+check("footer GitHub link visible", await page.locator(".foot__gh").isVisible());
+
+// Sweep the whole page so every reveal fires before the full-page screenshot.
+await page.evaluate(async () => {
+  for (let y = 0; y < document.body.scrollHeight; y += 500) {
+    window.scrollTo(0, y);
+    await new Promise((r) => setTimeout(r, 40));
+  }
+});
+await page.waitForTimeout(500);
 
 // ===== Responsive: mobile layout keeps the panel usable =====
 await page.locator("#text").fill("Монгол улс нь Уланбаатар хоттой, хүүнтэй орон.");

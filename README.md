@@ -7,11 +7,13 @@ Private drop-in replacement for the `spellcheck.mn` (Болорспелл) check
 ```sh
 npm install
 npm start          # http://127.0.0.1:3456  (PORT / HOST env to change; defaults to 127.0.0.1)
-npm test           # 31 API + static-route assertions
-npm run ui         # 132 Playwright assertions on the UI, writes scripts/shots/*.png
+npm test           # 33 API + static-route assertions
+npm run ui         # 142 Playwright assertions on the UI, writes scripts/shots/*.png
 ```
 
 ## Web UI
+
+One page for both the marketing site and the tool: sticky nav → dark hero with drifting glows and a count-up stats strip → **the live app inside a browser-style frame** (the "screenshot" section is the actual working editor, not an image) → feature grid → 3-step how-it-works → CTA band → footer, all in `public/index.html`. Sections reveal on scroll with staggered fade/slide animations, menus and the hover card pop in, the newest replacement slides into the history panel, and every animation is disabled under `prefers-reduced-motion`.
 
 `http://localhost:3456/` — type or paste text, drop in a file; every misspelling is highlighted at once, hover (or tap) one for ranked candidates, and the sidebar keeps a log of every replacement.
 
@@ -93,7 +95,7 @@ TAG=2026.09.21
 curl -fsSL -o words/mn_MN.aff "https://raw.githubusercontent.com/bataak/dict-mn/$TAG/mn_MN/mn_MN.aff"
 curl -fsSL -o words/mn_MN.dic "https://raw.githubusercontent.com/bataak/dict-mn/$TAG/mn_MN/mn_MN.dic"
 curl -fsSL -o words/LICENSE   "https://raw.githubusercontent.com/bataak/dict-mn/main/LICENSE"
-npm test                       # 31 assertions, then `npm run ui`
+npm test                       # 33 assertions, then `npm run ui`
 ```
 
 Note: releases up to `2026.09.07` were LPPL-1.3c; `2026.09.21` and later are MPL-2.0 (the `LICENSE` file at the `2026.09.21` tag lagged behind the file headers, so the header inside `mn_MN.aff` is authoritative).

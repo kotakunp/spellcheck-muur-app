@@ -933,7 +933,53 @@ window.addEventListener("resize", () => {
   hideHoverCard();
 });
 
+// ===== Landing =====
+function initLanding() {
+  const nav = document.getElementById("nav");
+  if (nav) {
+    const onScroll = () => nav.classList.toggle("is-scrolled", window.scrollY > 8);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+  }
+
+  const revealables = [...document.querySelectorAll(".reveal")];
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!("IntersectionObserver" in window) || reduced) {
+    revealables.forEach((el) => el.classList.add("is-visible"));
+  } else {
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          entry.target.classList.add("is-visible");
+          io.unobserve(entry.target);
+        }
+      },
+      { threshold: 0.12, rootMargin: "0px 0px -40px 0px" }
+    );
+    revealables.forEach((el) => io.observe(el));
+  }
+
+  const counter = document.querySelector("[data-count]");
+  if (!counter) return;
+  const target = Number(counter.dataset.count) || 0;
+  if (reduced) {
+    counter.textContent = formatNum(target);
+    return;
+  }
+  const start = performance.now();
+  const DURATION = 1500;
+  const tick = (now) => {
+    const p = Math.min(1, (now - start) / DURATION);
+    const eased = 1 - Math.pow(1 - p, 3);
+    counter.textContent = formatNum(Math.round(target * eased));
+    if (p < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
 // ===== Init =====
+initLanding();
 buildSamplesMenu();
 initTheme();
 updateHistButtons();

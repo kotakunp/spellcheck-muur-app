@@ -117,6 +117,8 @@ const homeHtml = await home.text();
 const homeType = home.headers.get("content-type") || "";
 assert("GET / serves the UI", home.status === 200 && homeType.startsWith("text/html"), homeType);
 assert("UI references app + styles", homeHtml.includes("/app.js") && homeHtml.includes("/styles.css"));
+assert("landing hero rendered", homeHtml.includes("hero__title") && homeHtml.includes("Нээлттэй"));
+assert("app embedded in the landing page", homeHtml.includes('id="app"') && homeHtml.includes('id="text"'));
 for (const [route, type] of [
   ["/styles.css", "text/css"],
   ["/app.js", "text/javascript"],
