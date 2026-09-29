@@ -245,23 +245,48 @@ function renderHistory() {
   for (const entry of replaceLog) historyListEl.prepend(buildHistoryEntry(entry));
 }
 // ===== Suggestions =====
-// Suggestions load lazily (on hover/click) and are cached, so a document with
-// hundreds of errors never fires hundreds of parallel requests.
+// Suggestions are fetched ONLY when the user explicitly runs the checker
+// («Алдаа шалгах» or ⌘/Ctrl + ↵). Hover and tap read the cache and never send
+// a request; in-flight fetches are deduplicated, and the explicit check primes
+// words one at a time so a document with hundreds of errors stays gentle.
+const pendingSuggestions = new Map();
+let primePromise = null;
+
 async function loadSuggestions(word) {
   if (suggestionCache.has(word)) return suggestionCache.get(word);
-  try {
-    const res = await fetch(`${API}/suggest`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ word }),
-    });
-    const list = res.ok ? await res.json() : [];
-    suggestionCache.set(word, list);
-    return list;
-  } catch {
-    suggestionCache.set(word, []);
-    return [];
-  }
+  if (pendingSuggestions.has(word)) return pendingSuggestions.get(word);
+  const request = (async () => {
+    try {
+      const res = await fetch(`${API}/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ word }),
+      });
+      const list = res.ok ? await res.json() : [];
+      suggestionCache.set(word, list);
+      return list;
+    } catch {
+      suggestionCache.set(word, []);
+      return [];
+    } finally {
+      pendingSuggestions.delete(word);
+    }
+  })();
+  pendingSuggestions.set(word, request);
+  return request;
+}
+
+// Explicit check: re-check the text, then fetch candidates for every flagged
+// word so the hover card opens instantly afterwards.
+function explicitCheck() {
+  const run = (async () => {
+    await runCheck();
+    for (const word of [...new Set(misspellings)]) await loadSuggestions(word);
+  })();
+  primePromise = run;
+  run.then(() => {
+    if (primePromise === run) primePromise = null;
+  });
 }
 
 // ===== Replacing =====
@@ -696,7 +721,6 @@ async function fillHoverCard(word) {
   list.dataset.role = "ranks";
   const hint = document.createElement("div");
   hint.className = "rank__hint";
-  hint.textContent = "Санал хайж байна…";
   list.append(hint);
   const actions = document.createElement("div");
   actions.className = "hovercard__actions";
@@ -713,29 +737,52 @@ async function fillHoverCard(word) {
   actions.append(skip, ignore);
   hoverCardEl.append(list, actions);
   if (hoverRect) placeHoverCard(hoverRect);
-  const suggestions = await loadSuggestions(word);
-  if (token !== hoverToken || hoverCardEl.hidden) return;
-  list.textContent = "";
-  if (!suggestions.length) {
-    hint.textContent = "Санал олдсонгүй.";
-    list.append(hint);
-  } else {
-    suggestions.slice(0, 6).forEach((suggestion, i) => {
-      const item = document.createElement("button");
-      item.type = "button";
-      item.className = i === 0 ? "rank__item rank__item--best" : "rank__item";
-      item.dataset.sug = suggestion;
-      const no = document.createElement("span");
-      no.className = "rank__no";
-      no.textContent = String(i + 1);
-      const label = document.createElement("span");
-      label.className = "rank__word";
-      label.textContent = suggestion;
-      item.append(no, label);
-      list.append(item);
-    });
+
+  const render = (suggestions) => {
+    if (token !== hoverToken || hoverCardEl.hidden) return;
+    list.textContent = "";
+    if (suggestions === null) {
+      hint.textContent = "«Алдаа шалгах»-ыг дарна уу — санал ачаалаагүй байна.";
+      list.append(hint);
+    } else if (!suggestions.length) {
+      hint.textContent = "Санал олдсонгүй.";
+      list.append(hint);
+    } else {
+      suggestions.slice(0, 6).forEach((suggestion, i) => {
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = i === 0 ? "rank__item rank__item--best" : "rank__item";
+        item.dataset.sug = suggestion;
+        const no = document.createElement("span");
+        no.className = "rank__no";
+        no.textContent = String(i + 1);
+        const label = document.createElement("span");
+        label.className = "rank__word";
+        label.textContent = suggestion;
+        item.append(no, label);
+        list.append(item);
+      });
+    }
+    if (hoverRect && !hoverCardEl.hidden) placeHoverCard(hoverRect);
+  };
+
+  // Instant path: the explicit check already cached this word.
+  if (suggestionCache.has(word)) {
+    render(suggestionCache.get(word));
+    return;
   }
-  if (hoverRect && !hoverCardEl.hidden) placeHoverCard(hoverRect);
+
+  // Hover never fetches. Wait only on requests an explicit check already
+  // started; with nothing in flight, point the user at «Алдаа шалгах».
+  const inFlight = pendingSuggestions.get(word) || primePromise;
+  if (!inFlight) {
+    render(null);
+    return;
+  }
+  hint.textContent = "Санал хайж байна…";
+  await inFlight;
+  if (token !== hoverToken || hoverCardEl.hidden) return;
+  render(suggestionCache.has(word) ? suggestionCache.get(word) : null);
 }
 
 function showHoverFor(mark) {
@@ -851,7 +898,7 @@ hoverCardEl.addEventListener("click", (event) => {
   hideHoverCard();
 });
 
-checkBtn.addEventListener("click", () => runCheck());
+checkBtn.addEventListener("click", explicitCheck);
 if (copyAllBtn) copyAllBtn.addEventListener("click", copyAll);
 if (downloadBtn) downloadBtn.addEventListener("click", downloadText);
 if (fixAllBtn) fixAllBtn.addEventListener("click", fixAll);
@@ -888,7 +935,7 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closeMenus();
   if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
     event.preventDefault();
-    runCheck();
+    explicitCheck();
   }
 });
 

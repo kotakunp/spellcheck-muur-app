@@ -8,17 +8,17 @@ Private drop-in replacement for the `spellcheck.mn` (Болорспелл) check
 npm install
 npm start          # http://127.0.0.1:3456  (PORT / HOST env to change; defaults to 127.0.0.1)
 npm test           # 33 API + static-route assertions
-npm run ui         # 142 Playwright assertions on the UI, writes scripts/shots/*.png
+npm run ui         # 151 Playwright assertions on the UI, writes scripts/shots/*.png
 ```
 
 ## Web UI
 
-One page for both the marketing site and the tool: sticky nav → dark hero title → **the live app inside a browser-style frame** (the "screenshot" section is the actual working editor, not an image) → feature grid → 3-step how-it-works → CTA band → footer, all in `public/index.html`. Sections reveal on scroll with staggered fade/slide animations, menus and the hover card pop in, the newest replacement slides into the history panel, and every animation is disabled under `prefers-reduced-motion`.
+One page for both the marketing site and the tool: sticky nav → hero title → **the live app inside a browser-style frame** (the "screenshot" section is the actual working editor, not an image) → feature grid → 3-step how-it-works → CTA band → footer, all in `public/index.html`. Sections reveal on scroll with staggered fade/slide animations, menus and the hover card pop in, the newest replacement slides into the history panel, and every animation is disabled under `prefers-reduced-motion`.
 
 `http://localhost:3456/` — type or paste text, drop in a file; every misspelling is highlighted at once, hover (or tap) one for ranked candidates, and the sidebar keeps a log of every replacement.
 
 - **Highlight everything at once** — every misspelled word in the document is highlighted simultaneously (soft red tint + wavy underline); the word under the pointer gets a stronger tint across all of its occurrences.
-- **Hover / tap candidates** — hovering (or clicking/tapping) a misspelled word opens a compact ranked list of up to 6 candidates right next to it — just the candidates, no explanations. Click one to replace **every** occurrence at once, keeping each occurrence's own casing (`Уланбаатар → Улаанбаатар`, `УЛАНБААТАР → УЛААНБААТАР`, `уланбаатар → улаанбаатар`). The card also offers *Алгасах* and *Тольд нэмэх*.
+- **Hover / tap candidates** — hovering (or clicking/tapping) a misspelled word opens a compact ranked list of up to 6 candidates right next to it — just the candidates, no explanations. Candidates are fetched **only when you press Алдаа шалгах** (or ⌘/Ctrl + ↵) and open instantly from the cache afterwards; hover and tap never send requests, and until the first check the card shows a prompt instead. Click one to replace **every** occurrence at once, keeping each occurrence's own casing (`Уланбаатар → Улаанбаатар`, `УЛАНБААТАР → УЛААНБААТАР`, `уланбаатар → улаанбаатар`). The card also offers *Алгасах* and *Тольд нэмэх*.
 - **Солилтын түүх (replacement history)** — the sidebar logs every replacement as `wrong → right` with per-occurrence `×n` counts and a timestamp; *Цэвэрлэх* empties the log. Session-only, never leaves the browser.
 - **Хэлбэр (case tools under the input)** — four buttons apply **БҮГД ТОМ** (UPPERCASE), **бүгд жижиг** (lowercase), **Өгүүлбэрийн хэлбэр** (Sentence case) or **Үг бүрийн эх үсэг** (Title Case) to the selected text — or to the whole text when nothing is selected. Each transform is undoable, preserves the selection, and re-checks automatically.
 - **Бүгдийг засах (Fix All)** — under the input; batch-applies the top candidate for every error in one click (disabled while the text is clean).

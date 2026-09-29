@@ -97,6 +97,19 @@ const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
 page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
 
+// Track every /suggest request from the very first interaction.
+let suggestCount = 0;
+let inflight = 0;
+let maxInflight = 0;
+page.on("request", (r) => {
+  if (!r.url().endsWith("/suggest")) return;
+  suggestCount++;
+  inflight++;
+  maxInflight = Math.max(maxInflight, inflight);
+});
+page.on("requestfinished", (r) => r.url().endsWith("/suggest") && inflight--);
+page.on("requestfailed", (r) => r.url().endsWith("/suggest") && inflight--);
+
 const shot = (name) => page.screenshot({ path: new URL(name, SHOTS).pathname });
 const textValue = () => page.locator("#text").inputValue();
 
@@ -175,9 +188,22 @@ check("hover card hidden until hovered", await page.locator("#hover-card").isHid
 check("fix all enabled with errors present", !(await page.locator("#fix-all-btn").isDisabled()));
 await shot("02-flagged.png");
 
-// ===== Hover: ranked candidates only, no explanation text =====
+// ===== Hover before checking: card only, no fetch, prompt instead of candidates =====
 const typo = "Уланбаатар";
+await hoverMark(page.locator(".pad__marks mark").first());
+check("hover opens the card without checking", await page.locator("#hover-card").isVisible());
+check("hover without checking offers no candidates", (await page.locator("#hover-card .rank__item").count()) === 0);
+check("hover prompts to run the checker", /Алдаа шалгах/.test(await page.locator("#hover-card .rank__hint").textContent()));
+check("no suggestion request fires on hover alone", suggestCount === 0, suggestCount);
+await page.mouse.move(4, 4);
+await page.waitForTimeout(450);
+check("prompt card closes when the pointer leaves", await page.locator("#hover-card").isHidden());
+
+// ===== Алдаа шалгах fetches the candidates; hover then opens them instantly =====
+await page.locator("#check-btn").click();
 await hoverFirstMark();
+check("check button fetches suggestions", suggestCount > 0, suggestCount);
+check("suggestions are fetched one at a time", maxInflight <= 1, maxInflight);
 check("hover opens the suggestion card", await page.locator("#hover-card").isVisible());
 check("hover highlights every occurrence of the word", (await page.locator(".pad__marks mark.is-hover").count()) >= 1);
 const rankItems = await page.locator("#hover-card .rank__item").allTextContents();
@@ -223,7 +249,7 @@ check("history entry survives undo/redo of text", (await page.locator("#history-
 // ===== Hover actions: skip and add to dictionary =====
 await page.locator("#clear-btn").click();
 await page.locator("#text").fill("Шинэ нэр болох туршилтт гэж бичлээ.");
-await hoverFirstMark();
+await hoverMark(page.locator(".pad__marks mark").first());
 await page.locator('#hover-card [data-action="skip"]').click();
 await page.waitForTimeout(300);
 check("skip removes the mark", (await page.locator('.pad__marks mark:text-is("туршилтт")').count()) === 0);
@@ -232,7 +258,7 @@ check("skipped word is not persisted to the dictionary", (await page.evaluate(()
 
 await page.locator("#clear-btn").click();
 await page.locator("#text").fill("Монгол улс нь хүүнтэй орон.");
-await hoverFirstMark();
+await hoverMark(page.locator(".pad__marks mark").first());
 await page.locator('#hover-card [data-action="ignore"]').click();
 await page.waitForTimeout(300);
 check("dictionary add removes the mark", (await page.locator('.pad__marks mark:text-is("хүүнтэй")').count()) === 0);
@@ -359,6 +385,7 @@ await shot("08-cleared.png");
 
 // ===== Replacement history clears on demand =====
 await page.locator("#text").fill("Энд улаанбатар гэсэн алдаа байна.");
+await page.locator("#check-btn").click();
 await hoverFirstMark();
 await pickRank(1);
 await page.waitForTimeout(900);
@@ -374,9 +401,10 @@ await page.locator("#text").fill("Энэ өгүүлбэрт улаанбатар
 await page.waitForSelector(".pad__marks mark", { timeout: 8000 });
 check("typing auto-checks the text", (await page.locator(".pad__marks mark").count()) > 0);
 const typedWord = await page.locator(".pad__marks mark").first().textContent();
+await page.locator("#check-btn").click();
 await hoverFirstMark();
 const typedBest = await page.locator("#hover-card .rank__word").first().textContent();
-check("auto-check offers ranked candidates", typedBest.length > 0 && typedBest.toLowerCase() !== typedWord.toLowerCase(), { typedWord, typedBest });
+check("checking offers ranked candidates", typedBest.length > 0 && typedBest.toLowerCase() !== typedWord.toLowerCase(), { typedWord, typedBest });
 await pickRank(1);
 await page.waitForTimeout(900);
 const typedFixed = await textValue();
@@ -387,6 +415,7 @@ check("replacement status names both words", (await page.locator("#status").text
 await page.locator("#text").fill("Уланбаатар хот. УЛАНБААТАР руу. уланбаатар руу.");
 await page.waitForSelector(".pad__marks mark", { timeout: 8000 });
 check("repeated typo yields three marks", (await page.locator(".pad__marks mark").count()) === 3);
+await page.locator("#check-btn").click();
 await hoverFirstMark();
 await pickRank(1);
 await page.waitForTimeout(900);
@@ -399,28 +428,23 @@ check("no marks left once every occurrence is fixed", (await page.locator(".pad_
 check("history records the whole replacement with a count", (await page.locator("#history-list .histentry__count").first().textContent()) === "×3", await page.locator("#history-list .histentry__count").first().textContent());
 await shot("09-casing.png");
 
-// ===== Large document: lazy suggestions, no request storms =====
-let suggestCount = 0;
-let inflight = 0;
-let maxInflight = 0;
-page.on("request", (r) => {
-  if (!r.url().endsWith("/suggest")) return;
-  suggestCount++;
-  inflight++;
-  maxInflight = Math.max(maxInflight, inflight);
-});
-page.on("requestfinished", (r) => r.url().endsWith("/suggest") && inflight--);
-page.on("requestfailed", (r) => r.url().endsWith("/suggest") && inflight--);
-
+// ===== Large document: checking alone and hover alone never touch /suggest =====
 const typoWord = "Уланбаатар";
 const bigText = Array.from({ length: 30 }, (_, i) => `Өгүүлбэр ${i + 1}: ${typoWord} хотод морь унаа байна.`).join("\n");
+const beforeBig = suggestCount;
 await page.locator("#text").fill(bigText);
 await page.waitForSelector(".pad__marks mark", { timeout: 15000 });
 await page.waitForTimeout(1200);
 check("every occurrence of the repeated typo is highlighted", (await page.locator(".pad__marks mark").count()) === 30);
-check("no suggestion requests fire before a hover", suggestCount === 0, suggestCount);
+check("auto-check fires no suggestion requests", suggestCount === beforeBig, suggestCount - beforeBig);
+await hoverMark(page.locator(".pad__marks mark").first());
+check("hover fires no suggestion request", suggestCount === beforeBig, suggestCount - beforeBig);
+check("cached candidates appear on hover without a fetch", (await page.locator("#hover-card .rank__item").count()) > 0);
+await page.mouse.move(4, 4);
+await page.waitForTimeout(450);
+await page.locator("#check-btn").click();
 await hoverFirstMark();
-check("hover stays within one suggestion request", suggestCount <= 1 && maxInflight <= 1, { suggestCount, maxInflight });
+check("candidates open from the cache after checking, with no new requests", suggestCount === beforeBig, suggestCount - beforeBig);
 await pickRank(1);
 await page.waitForTimeout(1200);
 const bigAfter = await textValue();

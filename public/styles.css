@@ -898,9 +898,6 @@ html {
 
 .hero {
   position: relative;
-  overflow: hidden;
-  background: #0b0b0a;
-  color: #f2f2ee;
   padding: 56px 32px 44px;
   text-align: center;
 }
@@ -914,12 +911,12 @@ html {
 .hero__badge {
   display: inline-block;
   padding: 7px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid var(--line);
   border-radius: 999px;
   font-size: 13px;
   letter-spacing: 0.08em;
-  color: rgba(255, 255, 255, 0.75);
-  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted);
+  background: var(--paper);
 }
 
 .hero__title {
@@ -928,7 +925,7 @@ html {
   font-weight: 800;
   letter-spacing: -0.04em;
   line-height: 1;
-  color: #fff;
+  color: var(--ink);
 }
 
 .btn--hero {
