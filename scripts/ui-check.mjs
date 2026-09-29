@@ -146,9 +146,26 @@ check("panel hides the empty state while words are wrong", await page.locator("#
 
 // Clicking a word jumps to it in the text.
 await page.locator("#history-list .errrow").first().click();
-await page.waitForTimeout(200);
-check("clicking a word highlights it in the text", (await page.locator(".pad__marks mark.is-hover").count()) >= 1);
+await page.waitForTimeout(250);
+check("clicking a word pins the hover look in the text", (await page.locator(".pad__marks mark.is-pinned").count()) === 1, await page.locator(".pad__marks mark.is-pinned").count());
+check("the pinned mark is the clicked word", (await page.locator(".pad__marks mark.is-pinned").textContent()) === "Уланбаатар");
+check("the pin looks like the hover state", await page.evaluate(() => {
+  const p = document.querySelector(".pad__marks mark.is-pinned");
+  const n = document.querySelector(".pad__marks mark:not(.is-pinned)");
+  return getComputedStyle(p).backgroundColor === "rgba(212, 58, 47, 0.22)" && getComputedStyle(p).backgroundColor !== getComputedStyle(n).backgroundColor;
+}));
+check("the pin does not fade away on its own", await page.evaluate(async () => {
+  await new Promise((r) => setTimeout(r, 1800));
+  return document.querySelectorAll(".pad__marks mark.is-pinned").length === 1;
+}));
 check("clicking a word focuses the editor", await page.evaluate(() => document.activeElement?.id === "text"));
+// Clicking another row moves the pin rather than adding a second one.
+await page.locator("#history-list .errrow").nth(1).click();
+await page.waitForTimeout(250);
+check("only one occurrence is pinned at a time", (await page.locator(".pad__marks mark.is-pinned").count()) === 1, await page.locator(".pad__marks mark.is-pinned").count());
+check("the previous pin is released", (await page.locator(".pad__marks mark.is-pinned").textContent()) === "хүүнтэй");
+await page.keyboard.press("Escape");
+check("escape releases the pin", (await page.locator(".pad__marks mark.is-pinned").count()) === 0);
 
 // Repeated words get one row with an occurrence badge, not two rows.
 await page.locator("#clear-btn").click();
@@ -156,6 +173,11 @@ await page.locator("#text").fill("Уланбаатар хот. Уланбаат�
 await waitForFreshMarks();
 check("repeated word shows one row, not two", (await page.locator("#history-list .errrow").count()) === 1, await page.locator("#history-list .errrow").count());
 check("repeated word shows its occurrence count", (await page.locator("#history-list .errrow__count").first().textContent()) === "×2");
+// Two occurrences in the text, but the pin marks only the one it points at.
+await page.locator("#history-list .errrow").first().click();
+await page.waitForTimeout(250);
+check("a repeated word pins only its first occurrence", (await page.locator(".pad__marks mark.is-pinned").count()) === 1, await page.locator(".pad__marks mark.is-pinned").count());
+check("the other occurrence stays unpinned", (await page.locator(".pad__marks mark:not(.is-pinned)").count()) === 1, await page.locator(".pad__marks mark:not(.is-pinned)").count());
 await page.locator("#clear-btn").click();
 await page.locator("#text").fill(SAMPLE_TEXT);
 await waitForFreshMarks();
@@ -428,6 +450,16 @@ await page.waitForTimeout(1200);
 check("every occurrence of the repeated typo is highlighted", (await page.locator(".pad__marks mark").count()) === 30);
 check("auto-check still fires no suggestion requests", suggestCount === beforeBig, suggestCount - beforeBig);
 check("error count reports one error, not thirty", (await page.locator("#err-count").textContent()) === "1 алдаа", await page.locator("#err-count").textContent());
+// A pasted document leaves the caret at the end, so the highlight layer has to
+// be scrolled with the text or every mark is drawn in the wrong place.
+check("highlight layer stays in sync with the text", await page.evaluate(() => document.getElementById("backdrop").scrollTop === document.getElementById("text").scrollTop), await page.evaluate(() => [document.getElementById("backdrop").scrollTop, document.getElementById("text").scrollTop]));
+
+// Scroll to the first occurrence, the way a reader would, then hover it.
+await page.locator("#text").evaluate((el) => {
+  el.scrollTop = 0;
+});
+await page.waitForTimeout(300);
+check("scrolling keeps the highlight layer aligned", await page.evaluate(() => document.getElementById("backdrop").scrollTop === document.getElementById("text").scrollTop));
 
 // First hover of this word costs a single request, not one per occurrence.
 await hoverMark(page.locator(".pad__marks mark").first());

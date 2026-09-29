@@ -425,6 +425,13 @@ button {
   text-decoration-thickness: 2px;
 }
 
+/* Clicking a word in the panel pins the hover look onto that one exact
+   occurrence, so the panel and the text always point at the same spot. */
+.pad__marks mark.is-pinned {
+  background: var(--red-tint-strong);
+  text-decoration-thickness: 2px;
+}
+
 .menu {
   position: absolute;
   top: calc(100% + 6px);
@@ -724,7 +731,9 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
-/* A word that is still wrong: a button, so it can jump to the occurrence. */
+/* A word that is still wrong: a button, so it can jump to the occurrence.
+   Plain card, same as every other row in the panel — the red text carries
+   the "still wrong" signal, so no accent bar is needed. */
 .errrow {
   display: flex;
   align-items: center;
@@ -733,7 +742,6 @@ button {
   padding: 10px 12px;
   background: var(--paper);
   border: 1px solid var(--line);
-  border-left: 3px solid var(--red-edge);
   border-radius: 10px;
   box-shadow: var(--shadow);
   font: inherit;
@@ -741,12 +749,12 @@ button {
   text-align: left;
   color: var(--red-ink);
   cursor: pointer;
-  transition: background-color 0.12s ease, border-color 0.12s ease;
+  transition: background-color 0.12s ease;
 }
 
 .errrow:hover {
-  background: var(--red-tint);
-  border-left-color: var(--red);
+  background: var(--bg);
+  border-color: var(--line-strong);
 }
 
 .errrow__word {

@@ -110,6 +110,14 @@ function fit() {
   marksEl.style.paddingRight = `${base + scrollbar}px`;
 }
 
+// The textarea owns the scroll; the clipped backdrop has to follow it. This must
+// also run after a repaint: a caret-driven scroll (paste, fill) can land before
+// the new marks exist, so the sync is clamped to 0 and would never be retried.
+function syncScroll() {
+  marksEl.scrollTop = textEl.scrollTop;
+  marksEl.scrollLeft = textEl.scrollLeft;
+}
+
 function paintMarks(value, flagged) {
   let html = "";
   let cursor = 0;
@@ -130,9 +138,11 @@ function paintMarks(value, flagged) {
 
 function paint() {
   hideHoverCard();
+  pinnedMark = null;
   const value = textEl.value;
   const flagged = new Set(misspellings.map((word) => word.toLowerCase()));
   paintMarks(value, flagged);
+  syncScroll();
   marksEl.classList.remove("just-checked");
   // Checking is automatic, so the live count is the standing proof that a check
   // ran. Every repaint keeps it honest (skip, dictionary, undo, clear).
@@ -288,15 +298,38 @@ function renderHistory() {
   for (let i = replaceLog.length - 1; i >= 0; i--) historyListEl.append(buildHistoryEntry(replaceLog[i]));
 }
 
-// Clicking a still-wrong word scrolls to it and pulses every occurrence.
+// Clicking a still-wrong word pins the hover look onto that one exact
+// occurrence, and scrolls it into view if the pad has scrolled past it.
 function focusWord(word) {
   const key = word.toLowerCase();
   const mark = [...marksEl.querySelectorAll("mark")].find((el) => el.dataset.word.toLowerCase() === key);
   if (!mark) return;
-  mark.scrollIntoView({ block: "center" });
-  setHoverHighlight(word);
+  scrollPadTo(mark);
+  pinMark(mark);
   textEl.focus();
-  setTimeout(() => setHoverHighlight(null), 1500);
+}
+
+// The textarea is the real scroller, so nudge it — never the clipped backdrop.
+function scrollPadTo(mark) {
+  const pad = padEl.getBoundingClientRect();
+  const box = mark.getBoundingClientRect();
+  const offset = box.top - pad.top;
+  if (offset >= 0 && offset <= textEl.clientHeight) return;
+  textEl.scrollTop = Math.max(0, textEl.scrollTop + offset - textEl.clientHeight / 2);
+}
+
+// The pin is a separate class from .is-hover so real pointer movement can take
+// over without the two fighting over the same nodes.
+function pinMark(mark) {
+  if (pinnedMark && pinnedMark !== mark) pinnedMark.classList.remove("is-pinned");
+  pinnedMark = mark || null;
+  if (pinnedMark) pinnedMark.classList.add("is-pinned");
+}
+
+function unpinMark() {
+  if (!pinnedMark) return;
+  pinnedMark.classList.remove("is-pinned");
+  pinnedMark = null;
 }
 // ===== Suggestions =====
 // Suggestions are fetched ONLY when the user explicitly runs the checker
@@ -571,6 +604,7 @@ let hoverToken = 0;
 let lastHoverMark = null;
 let hoverRaf = 0;
 let hoverPoint = null;
+let pinnedMark = null;
 
 function setHoverHighlight(word) {
   const key = word ? word.toLowerCase() : null;
@@ -725,6 +759,8 @@ function updateHover(x, y) {
     clearTimeout(hoverHideTimer);
     hoverHideTimer = null;
   }
+  // The pointer has taken over from the panel pin.
+  unpinMark();
   showHoverFor(mark);
 }
 
@@ -742,8 +778,7 @@ textEl.addEventListener("paste", () => {
 });
 textEl.addEventListener("scroll", () => {
   hideHoverCard();
-  marksEl.scrollTop = textEl.scrollTop;
-  marksEl.scrollLeft = textEl.scrollLeft;
+  syncScroll();
 });
 
 // Selecting a flagged word inside the textarea.
@@ -835,7 +870,10 @@ document.addEventListener("click", (event) => {
   if (!event.target.closest(".popwrap")) closeMenus();
 });
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") closeMenus();
+  if (event.key === "Escape") {
+    closeMenus();
+    unpinMark();
+  }
   if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
     event.preventDefault();
     forceCheck();
