@@ -1,77 +1,18 @@
 import { spawn } from "node:child_process";
-import { deflateRawSync } from "node:zlib";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 import { chromium } from "playwright";
 
 const PORT = Number(process.env.UI_PORT || 4100 + Math.floor(Math.random() * 200));
 const BASE = `http://127.0.0.1:${PORT}`;
 const SHOTS = new URL("./shots/", import.meta.url);
-const TMP = new URL("./tmp/", import.meta.url);
 
 await mkdir(SHOTS, { recursive: true });
-await mkdir(TMP, { recursive: true });
 
-// ---- minimal .docx builder (stored + deflate entries) so the ZIP reader is exercised ----
-function zipEntry(name, content, method) {
-  const raw = Buffer.from(content, "utf8");
-  const data = method === 8 ? deflateRawSync(raw) : raw;
-  const nameBuf = Buffer.from(name, "utf8");
-  const local = Buffer.alloc(30);
-  local.writeUInt32LE(0x04034b50, 0);
-  local.writeUInt16LE(20, 4);
-  local.writeUInt16LE(0, 6);
-  local.writeUInt16LE(method, 8);
-  local.writeUInt32LE(0, 14);
-  local.writeUInt32LE(data.length, 18);
-  local.writeUInt32LE(raw.length, 22);
-  local.writeUInt16LE(nameBuf.length, 26);
-  local.writeUInt16LE(0, 28);
-  return { nameBuf, local, data, raw, method };
-}
 
-function buildDocx(paragraphs) {
-  const xml =
-    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
-    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' +
-    paragraphs.map((p) => `<w:p><w:r><w:t>${p}</w:t></w:r></w:p>`).join("") +
-    "</w:body></w:document>";
-  const entries = [
-    zipEntry("[Content_Types].xml", "<Types/>", 0),
-    zipEntry("word/document.xml", xml, 8),
-  ];
-  const parts = [];
-  let offset = 0;
-  for (const entry of entries) {
-    entry.offset = offset;
-    parts.push(entry.local, entry.nameBuf, entry.data);
-    offset += entry.local.length + entry.nameBuf.length + entry.data.length;
-  }
-  const central = [];
-  let centralSize = 0;
-  for (const entry of entries) {
-    const head = Buffer.alloc(46);
-    head.writeUInt32LE(0x02014b50, 0);
-    head.writeUInt16LE(20, 4);
-    head.writeUInt16LE(20, 6);
-    head.writeUInt16LE(entry.method, 10);
-    head.writeUInt32LE(0, 16);
-    head.writeUInt32LE(entry.data.length, 20);
-    head.writeUInt32LE(entry.raw.length, 24);
-    head.writeUInt16LE(entry.nameBuf.length, 28);
-    head.writeUInt32LE(entry.offset, 42);
-    central.push(head, entry.nameBuf);
-    centralSize += head.length + entry.nameBuf.length;
-  }
-  const cd = Buffer.concat(central);
-  const eocd = Buffer.alloc(22);
-  eocd.writeUInt32LE(0x06054b50, 0);
-  eocd.writeUInt16LE(entries.length, 8);
-  eocd.writeUInt16LE(entries.length, 10);
-  eocd.writeUInt32LE(centralSize, 12);
-  eocd.writeUInt32LE(offset, 16);
-  return Buffer.concat([Buffer.concat(parts), cd, eocd]);
-}
+
+// Text used everywhere a checked document is needed.
+const SAMPLE_TEXT = "Монгол улс нь Азийн зүүн хэсэгт оршино. Уланбаатар хот олон хүүнтэй. Би маргааш нийтийн тээвэрээр худалдааны төв рүү явна.";
 
 // ---- assertion collector ----
 const results = [];
@@ -157,35 +98,28 @@ check("no card elements exist anymore", (await page.locator(".card, #cards, #all
 check("no marks at start", (await page.locator(".pad__marks mark").count()) === 0);
 check("undo disabled at start", await page.locator("#undo-btn").isDisabled());
 check("redo disabled at start", await page.locator("#redo-btn").isDisabled());
-check("samples menu closed at start", await page.locator("#samples-menu").isHidden());
-check("fix all disabled at start", await page.locator("#fix-all-btn").isDisabled());
+check("reading time stat is gone", (await page.locator("#stat-reading").count()) === 0);
+check("no dropzone or file picker", (await page.locator("#dropzone, #file-input").count()) === 0);
+check("no samples controls", (await page.locator("#samples-btn, #sample-btn, #samples-menu").count()) === 0);
+check("no fix all button", (await page.locator("#fix-all-btn").count()) === 0);
 check("format bar shows four tools", (await page.locator("#formatbar .fmtbtn").count()) === 4);
 const padBox0 = await page.locator("#pad").boundingBox();
 const fmtBox0 = await page.locator("#formatbar").boundingBox();
 check("formatters sit under the input", fmtBox0.y >= padBox0.y + padBox0.height - 2, { padBottom: padBox0.y + padBox0.height, fmt: fmtBox0.y });
 await shot("01-empty.png");
 
-// ===== Samples menu =====
-await page.locator("#samples-btn").click();
-const menuItems = await page.locator("#samples-menu .menu__item").allTextContents();
-check("samples menu lists samples", menuItems.length >= 2, menuItems);
-check("aria-expanded true while open", (await page.locator("#samples-btn").getAttribute("aria-expanded")) === "true");
-await page.keyboard.press("Escape");
-check("escape closes the samples menu", await page.locator("#samples-menu").isHidden());
-
-// ===== Load sample: every flagged word is highlighted at once =====
-await page.locator("#sample-btn").click();
+// ===== Type text: every flagged word is highlighted at once =====
+await page.locator("#text").fill(SAMPLE_TEXT);
 await page.waitForSelector(".pad__marks mark", { timeout: 8000 });
 const marks = await page.locator(".pad__marks mark").allTextContents();
 const uniqueMarks = [...new Set(marks.map((m) => m.toLowerCase()))];
-check("sample produces marks", marks.length > 0, marks);
+check("typed text produces marks", marks.length > 0, marks);
 check("marks cover every flagged occurrence", marks.length >= uniqueMarks.length, { marks: marks.length, uniqueMarks });
 const tintedCount = await page.evaluate(() =>
   [...document.querySelectorAll(".pad__marks mark")].filter((m) => getComputedStyle(m).backgroundColor !== "rgba(0, 0, 0, 0)").length
 );
 check("all misspellings are tinted at once", tintedCount === marks.length, { tintedCount, marks: marks.length });
 check("hover card hidden until hovered", await page.locator("#hover-card").isHidden());
-check("fix all enabled with errors present", !(await page.locator("#fix-all-btn").isDisabled()));
 await shot("02-flagged.png");
 
 // ===== Hover before checking: card only, no fetch, prompt instead of candidates =====
@@ -272,56 +206,6 @@ check("cleared dictionary restores the mark", (await page.locator('.pad__marks m
 check("settings menu closed after clear", await page.locator("#settings-menu").isHidden());
 check("dictionary emptied in storage", (await page.evaluate(() => JSON.parse(localStorage.getItem("sc-ignored-v1") || "[]"))).length === 0);
 
-// ===== Text file import =====
-const txtPath = new URL("typo-sample.txt", TMP).pathname;
-await writeFile(txtPath, "Энэ бол шинэ файл юм. Уланбаатар хотод морь унаа байна.\nДараагийн мөр: сайхан өдөр байна.\n");
-await page.setInputFiles("#file-input", txtPath);
-await page.waitForFunction(() => document.getElementById("text").value.startsWith("Энэ бол шинэ"), null, { timeout: 8000 });
-await page.waitForSelector(".pad__marks mark", { timeout: 8000 });
-const txtValue = await textValue();
-check("txt file loaded into the editor", txtValue.startsWith("Энэ бол шинэ файл юм."), txtValue.slice(0, 40));
-check("txt newline preserved", txtValue.includes("байна.\nДараагийн мөр"));
-check("loaded file is checked", (await page.locator(".pad__marks mark").count()) > 0);
-check("status names the loaded file", /typo-sample\.txt/.test(await page.locator("#status").textContent()), await page.locator("#status").textContent());
-check("undo available after import", !(await page.locator("#undo-btn").isDisabled()));
-await shot("05-txt-import.png");
-
-// ===== DOCX import (exercises the deflate ZIP reader) =====
-const docxPath = new URL("typo-sample.docx", TMP).pathname;
-await writeFile(docxPath, buildDocx(["Монгол хэлний алдаатай өгүүлбэр.", "Уланбаатар хотын нэр буруу бичигдсэн."]));
-await page.setInputFiles("#file-input", docxPath);
-await page.waitForFunction(() => document.getElementById("text").value.includes("Монгол хэлний"), null, { timeout: 8000 });
-const docxValue = await textValue();
-check("docx paragraphs extracted", docxValue.includes("Уланбаатар хотын нэр буруу бичигдсэн."), docxValue);
-check("docx newline preserved between paragraphs", docxValue.includes("өгүүлбэр.\nУланбаатар"));
-check("docx content checked for errors", (await page.locator(".pad__marks mark").count()) > 0);
-check("docx status names the file", /typo-sample\.docx/.test(await page.locator("#status").textContent()));
-await shot("06-docx-import.png");
-
-// ===== Drag & drop a file onto the dropzone =====
-await page.evaluate(async () => {
-  const data = new DataTransfer();
-  data.items.add(new File(["Чирж оруулсан текст. Дараа нь улаанбатар гэж бичсэн."], "dropped.txt", { type: "text/plain" }));
-  const zone = document.getElementById("dropzone");
-  zone.dispatchEvent(new DragEvent("dragover", { dataTransfer: data, bubbles: true, cancelable: true }));
-  zone.dispatchEvent(new DragEvent("drop", { dataTransfer: data, bubbles: true, cancelable: true }));
-});
-await page.waitForFunction(() => document.getElementById("text").value.startsWith("Чирж оруулсан"), null, { timeout: 8000 });
-check("dropped file loaded", (await textValue()).includes("Чирж оруулсан текст."));
-check("dropzone highlight cleared after drop", (await page.locator("#dropzone.is-over").count()) === 0);
-
-// Unsupported file type reports a friendly error.
-await page.evaluate(() => {
-  const input = document.getElementById("file-input");
-  const data = new DataTransfer();
-  data.items.add(new File(["\u0000\u0001binary"], "bad.docx"));
-  input.files = data.files;
-  input.dispatchEvent(new Event("change", { bubbles: true }));
-});
-await page.waitForTimeout(400);
-check("broken docx reports an error", /уншиж чадсангүй/.test(await page.locator("#status").textContent()), await page.locator("#status").textContent());
-check("error status styled", (await page.locator("#status.status--info").count()) === 0);
-
 // ===== Keyboard shortcut: Cmd/Ctrl+Enter re-checks =====
 await page.locator("#text").click();
 await page.keyboard.press("ControlOrMeta+Enter");
@@ -372,16 +256,47 @@ check("light theme attribute applied", (await page.locator("html").getAttribute(
 await page.keyboard.press("Escape");
 
 // ===== Clear button =====
-await page.locator("#sample-btn").click();
+await page.locator("#text").fill(SAMPLE_TEXT);
 await page.waitForSelector(".pad__marks mark", { timeout: 8000 });
 await page.locator("#clear-btn").click();
 await page.waitForTimeout(300);
 check("clear empties the editor", (await textValue()) === "");
 check("clear removes all marks", (await page.locator(".pad__marks mark").count()) === 0);
-check("clear disables fix all", await page.locator("#fix-all-btn").isDisabled());
 check("clear resets stats", (await page.locator("#stat-words").textContent()) === "0 үг");
 check("empty state reflects empty history", await page.locator("#empty").isVisible());
 await shot("08-cleared.png");
+
+// ===== Check feedback: spinner, pad sweep, staggered marks, result count =====
+const CHECK_URL = "**/cms-client/modules/spellchecker/check";
+await page.route(CHECK_URL, async (route) => {
+  await new Promise((r) => setTimeout(r, 600));
+  await route.continue();
+});
+await page.locator("#text").fill(SAMPLE_TEXT);
+await page.waitForSelector(".pad__marks mark", { timeout: 8000 });
+await page.waitForTimeout(900);
+await page.locator("#check-btn").click();
+check("check button shows a spinner while checking", await page.locator("#check-btn .check__spinner").isVisible());
+check("check button is disabled while checking", await page.locator("#check-btn").isDisabled());
+check("editor shows the scanning sweep while checking", (await page.locator(".editor.is-scanning").count()) === 1);
+check("sweep layer exists on the pad", (await page.locator(".pad").count()) === 1);
+await page.waitForFunction(() => !document.querySelector(".editor.is-scanning"), null, { timeout: 10000 });
+await page.waitForSelector("#check-btn:not(.is-checking)", { timeout: 10000 });
+check("check button re-enables when done", !(await page.locator("#check-btn").isDisabled()));
+check("spinner hidden when done", await page.locator("#check-btn .check__spinner").isHidden());
+check("label returns after the check", await page.locator("#check-btn .btn__label").isVisible());
+check("marks pop in after checking", (await page.locator("#backdrop.just-checked mark").count()) > 0);
+check("marks carry a stagger index", ((await page.locator("#backdrop mark").first().getAttribute("style")) || "").includes("--i:"));
+check("status reports how many errors were found", /3 алдаа олдлоо/.test(await page.locator("#status").textContent()), await page.locator("#status").textContent());
+await shot("15-check-feedback.png");
+await page.unroute(CHECK_URL);
+
+// A clean document reports no errors.
+await page.locator("#text").fill("Монгол хэл сайхан бичигдсэн байна.");
+await page.waitForTimeout(900);
+await page.locator("#check-btn").click();
+await page.waitForSelector("#check-btn:not(.is-checking)", { timeout: 10000 });
+check("clean text reports no errors", /Алдаа олдсонгүй/.test(await page.locator("#status").textContent()), await page.locator("#status").textContent());
 
 // ===== Replacement history clears on demand =====
 await page.locator("#text").fill("Энд улаанбатар гэсэн алдаа байна.");
@@ -457,21 +372,6 @@ await page.waitForTimeout(1200);
 check("undo restores the large document typo", (await textValue()).includes(typoWord));
 await shot("10-large-doc.png");
 
-// ===== Fix all =====
-await page.locator("#clear-btn").click();
-await page.locator("#text").fill("Энд монгл болон саайн үгс байна.");
-await page.waitForSelector(".pad__marks mark", { timeout: 8000 });
-check("fix all enabled when errors exist", !(await page.locator("#fix-all-btn").isDisabled()));
-const beforeFixAll = await page.locator("#history-list .histentry").count();
-await page.locator("#fix-all-btn").click();
-await page.waitForTimeout(1500);
-const fixedAllText = await textValue();
-check("fix all replaces all errors with top candidates", fixedAllText.includes("монгол") && fixedAllText.includes("сайн"), fixedAllText);
-check("fix all clears every mark", (await page.locator(".pad__marks mark").count()) === 0);
-check("fix all records both replacements in history", (await page.locator("#history-list .histentry").count()) === beforeFixAll + 2);
-check("fix all disabled again once clean", await page.locator("#fix-all-btn").isDisabled());
-await shot("11-fix-all.png");
-
 // ===== Case tools under the input =====
 await page.locator("#clear-btn").click();
 await page.locator("#text").fill("сайн байна уу? би монгол хэлээр ярьдаг. улаанбаатар хот.");
@@ -541,7 +441,6 @@ check("case transform is undoable", (await textValue()) === "сайн байна
 
 // ===== Stats / copy / download =====
 check("sentences stat visible", /өгүүлбэр/.test(await page.locator("#stat-sentences").textContent()));
-check("reading time stat visible", /мин/.test(await page.locator("#stat-reading").textContent()));
 check("copy all button visible", await page.locator("#copy-all-btn").isVisible());
 check("download button visible", await page.locator("#download-btn").isVisible());
 

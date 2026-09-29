@@ -15,19 +15,18 @@ npm run ui         # 151 Playwright assertions on the UI, writes scripts/shots/*
 
 One page for both the marketing site and the tool: sticky nav → hero title → **the live app inside a browser-style frame** (the "screenshot" section is the actual working editor, not an image) → feature grid → 3-step how-it-works → CTA band → footer, all in `public/index.html`. Sections reveal on scroll with staggered fade/slide animations, menus and the hover card pop in, the newest replacement slides into the history panel, and every animation is disabled under `prefers-reduced-motion`.
 
-`http://localhost:3456/` — type or paste text, drop in a file; every misspelling is highlighted at once, hover (or tap) one for ranked candidates, and the sidebar keeps a log of every replacement.
+`http://localhost:3456/` — type or paste your text and press **Алдаа шалгах**; every misspelling is highlighted at once, hover (or tap) one for ranked candidates, and the sidebar keeps a log of every replacement.
 
 - **Highlight everything at once** — every misspelled word in the document is highlighted simultaneously (soft red tint + wavy underline); the word under the pointer gets a stronger tint across all of its occurrences.
 - **Hover / tap candidates** — hovering (or clicking/tapping) a misspelled word opens a compact ranked list of up to 6 candidates right next to it — just the candidates, no explanations. Candidates are fetched **only when you press Алдаа шалгах** (or ⌘/Ctrl + ↵) and open instantly from the cache afterwards; hover and tap never send requests, and until the first check the card shows a prompt instead. Click one to replace **every** occurrence at once, keeping each occurrence's own casing (`Уланбаатар → Улаанбаатар`, `УЛАНБААТАР → УЛААНБААТАР`, `уланбаатар → улаанбаатар`). The card also offers *Алгасах* and *Тольд нэмэх*.
 - **Солилтын түүх (replacement history)** — the sidebar logs every replacement as `wrong → right` with per-occurrence `×n` counts and a timestamp; *Цэвэрлэх* empties the log. Session-only, never leaves the browser.
 - **Хэлбэр (case tools under the input)** — four buttons apply **БҮГД ТОМ** (UPPERCASE), **бүгд жижиг** (lowercase), **Өгүүлбэрийн хэлбэр** (Sentence case) or **Үг бүрийн эх үсэг** (Title Case) to the selected text — or to the whole text when nothing is selected. Each transform is undoable, preserves the selection, and re-checks automatically.
-- **Бүгдийг засах (Fix All)** — under the input; batch-applies the top candidate for every error in one click (disabled while the text is clean).
+- **Алдаа шалгах feedback** — the button swaps its sparkle for a spinner and a light sweep crosses the text while the request is in flight; when the answer arrives the flagged words pop in one by one (a short stagger) and the status line reports how many errors were found (`3 алдаа олдлоо.` / `Алдаа олдсонгүй.`).
 - **Алгасах & Тольд нэмэх** — available on the hover card: *Алгасах* skips the error for the current session; *Тольд нэмэх* adds the word permanently to your personal dictionary (stored in browser `localStorage`); *Тохиргоо → Тольд нэмсэн үгсийг цэвэрлэх* resets it.
 - **Хуулах / Татах** — 1-click clipboard copy of the entire text and direct export as a `.txt` file.
-- **Stats** — live word, character, sentence counts, and estimated reading time.
-- **Буцаах / Дахин хийх** — undo/redo for edits, sample loads, and file imports (last 100 states).
-- **Import** — drop a `.txt` or `.docx` on the dropzone (or click it). DOCX is read in the browser: a ~40-line ZIP reader inflates `word/document.xml` with the native `DecompressionStream`, so no uploads and no dependencies.
-- **Жишээ текст** opens a menu of sample paragraphs, **Цэвэрлэх** empties the box, **Алдаа шалгах** re-checks, `⌘/Ctrl + ↵` forces a check, `Esc` closes menus.
+- **Stats** — live word, character, and sentence counts.
+- **Буцаах / Дахин хийх** — undo/redo for edits and replacements (last 100 states).
+- **Цэвэрлэх** empties the box, `⌘/Ctrl + ↵` forces a check, `Esc` closes menus.
 - **Theme** — *Тохиргоо → Харанхуй горим* switches light/dark (remembered in `localStorage`, defaults to your OS setting).
 - No build step, no client framework — three static files in `public/`.
 

@@ -6,23 +6,17 @@ const statusEl = document.getElementById("status");
 const statWordsEl = document.getElementById("stat-words");
 const statCharsEl = document.getElementById("stat-chars");
 const statSentencesEl = document.getElementById("stat-sentences");
-const statReadingEl = document.getElementById("stat-reading");
 const copyAllBtn = document.getElementById("copy-all-btn");
 const downloadBtn = document.getElementById("download-btn");
-const sampleBtn = document.getElementById("sample-btn");
-const samplesBtn = document.getElementById("samples-btn");
-const samplesMenu = document.getElementById("samples-menu");
 const clearBtn = document.getElementById("clear-btn");
 const checkBtn = document.getElementById("check-btn");
 const undoBtn = document.getElementById("undo-btn");
 const redoBtn = document.getElementById("redo-btn");
-const dropzone = document.getElementById("dropzone");
-const fileInput = document.getElementById("file-input");
 const emptyEl = document.getElementById("empty");
 const historyListEl = document.getElementById("history-list");
 const clearHistoryBtn = document.getElementById("clear-history");
-const fixAllBtn = document.getElementById("fix-all-btn");
 const formatBarEl = document.getElementById("formatbar");
+const editorEl = document.querySelector(".editor");
 const settingsBtn = document.getElementById("settings-btn");
 const settingsMenu = document.getElementById("settings-menu");
 const themeToggle = document.getElementById("theme-toggle");
@@ -33,20 +27,6 @@ const API = "/cms-client/modules/spellchecker";
 const CYRILLIC = /[\u0400-\u04FF]+/g;
 const STORAGE_KEY = "sc-ignored-v1";
 const THEME_KEY = "sc-theme-v1";
-
-const SAMPLES = [
-  {
-    label: "Богино жишээ",
-    text: "Монгол улс нь Азийн зүүн хэсэгт оршино. Уланбаатар хот олон хүүнтэй. Би маргааш нийтийн тээвэрээр худалдааны төв рүү явна.",
-  },
-  {
-    label: "Урт жишээ",
-    text:
-      "Сайн байна уу? Би өнөөдөр цаг агаар саайн байгаа тул гадуур аяллаа. " +
-      "Найзуудтайгаа уулзахдаа монгл хэлээр ярилцаж, хамтдаа гэртээ тээвэрээр ирэв. " +
-      "Маргааш ажилдаа яаралтай очих хэрэгтэй тул эрт унтъя.",
-  },
-];
 
 // ===== State =====
 let ignored = new Set(readStored());
@@ -115,11 +95,9 @@ function updateStats() {
   const sentences = value.trim()
     ? (value.match(/[^.!?\n]+[.!?]+|[^.!?\n]+$/g) || []).filter((s) => s.trim().length > 0).length
     : 0;
-  const minutes = words > 0 ? Math.max(1, Math.ceil(words / 160)) : 0;
   statWordsEl.textContent = `${formatNum(words)} үг`;
   statCharsEl.textContent = `${formatNum(chars)} тэмдэгт`;
   if (statSentencesEl) statSentencesEl.textContent = `${formatNum(sentences)} өгүүлбэр`;
-  if (statReadingEl) statReadingEl.textContent = `~${minutes} мин`;
 }
 
 // ===== Layout =====
@@ -136,11 +114,13 @@ function fit() {
 function paintMarks(value, flagged) {
   let html = "";
   let cursor = 0;
+  // --i is the stagger index the just-checked animation reuses.
+  let i = 0;
   for (const match of value.matchAll(CYRILLIC)) {
     html += escapeHtmlLite(value.slice(cursor, match.index));
     const word = match[0];
     if (flagged.has(word.toLowerCase())) {
-      html += `<mark data-word="${escapeHtmlLite(word)}">${escapeHtmlLite(word)}</mark>`;
+      html += `<mark data-word="${escapeHtmlLite(word)}" style="--i:${i++}">${escapeHtmlLite(word)}</mark>`;
     } else {
       html += escapeHtmlLite(word);
     }
@@ -154,7 +134,7 @@ function paint() {
   const value = textEl.value;
   const flagged = new Set(misspellings.map((word) => word.toLowerCase()));
   paintMarks(value, flagged);
-  fixAllBtn.disabled = misspellings.length === 0;
+  marksEl.classList.remove("just-checked");
 }
 
 function markAt(x, y) {
@@ -166,6 +146,12 @@ function markAt(x, y) {
   return null;
 }
 // ===== Checking =====
+function setChecking(on) {
+  checking = on;
+  checkBtn.classList.toggle("is-checking", on);
+  checkBtn.disabled = on;
+}
+
 function scheduleCheck() {
   clearTimeout(debounce);
   debounce = setTimeout(runCheck, 400);
@@ -178,13 +164,13 @@ async function runCheck() {
   if (!value.trim()) {
     requestId++;
     misspellings = [];
-    checking = false;
+    setChecking(false);
     setStatus("");
     paint();
     return;
   }
   const id = ++requestId;
-  checking = true;
+  setChecking(true);
   try {
     const res = await fetch(`${API}/check`, {
       method: "POST",
@@ -195,14 +181,14 @@ async function runCheck() {
     const data = await res.json();
     if (id !== requestId) return;
     misspellings = data.filter((word) => !ignored.has(word.toLowerCase()) && !sessionSkipped.has(word.toLowerCase()));
-    checking = false;
-    // A successful check clears a stale connection error, but keeps info messages
-    // such as "«file.txt» ачааллаа." that describe what just happened.
+    setChecking(false);
+    // A successful check clears a stale connection error but keeps info messages
+    // describing what just happened.
     if (statusIsError) setStatus("");
     paint();
   } catch {
     if (id !== requestId) return;
-    checking = false;
+    setChecking(false);
     setStatus("Шалгаж чадсангүй. Серверт холбогдохгүй байна.", "error");
   }
 }
@@ -276,11 +262,24 @@ async function loadSuggestions(word) {
   return request;
 }
 
-// Explicit check: re-check the text, then fetch candidates for every flagged
-// word so the hover card opens instantly afterwards.
+// Explicit check: sweep the pad, re-check, report the count, then fetch
+// candidates for every flagged word so the hover card opens instantly.
 function explicitCheck() {
   const run = (async () => {
+    // Remove + reflow restarts the sweep even on back-to-back checks.
+    editorEl.classList.remove("is-scanning");
+    void editorEl.offsetWidth;
+    editorEl.classList.add("is-scanning");
     await runCheck();
+    editorEl.classList.remove("is-scanning");
+    if (misspellings.length) {
+      marksEl.classList.remove("just-checked");
+      void marksEl.offsetWidth;
+      marksEl.classList.add("just-checked");
+      setStatus(`${formatNum(misspellings.length)} алдаа олдлоо.`);
+    } else if (textEl.value.trim()) {
+      setStatus("Алдаа олдсонгүй.");
+    }
     for (const word of [...new Set(misspellings)]) await loadSuggestions(word);
   })();
   primePromise = run;
@@ -349,46 +348,6 @@ function clearDictionary() {
   storeIgnored();
   setStatus("Тольд нэмсэн үгсийг цэвэрлэлээ.");
   runCheck();
-}
-
-async function fixAll() {
-  if (!misspellings.length) return;
-  commitHistory();
-  let text = textEl.value;
-  let fixedCount = 0;
-  for (const word of [...misspellings]) {
-    const list = await loadSuggestions(word);
-    if (list && list.length > 0) {
-      const best = list[0];
-      const key = word.toLowerCase();
-      let out = "";
-      let cursor = 0;
-      let count = 0;
-      for (const match of text.matchAll(CYRILLIC)) {
-        out += text.slice(cursor, match.index);
-        if (match[0].toLowerCase() === key) {
-          out += applyCasing(match[0], best);
-          count++;
-        } else {
-          out += match[0];
-        }
-        cursor = match.index + match[0].length;
-      }
-      if (count) {
-        text = out + text.slice(cursor);
-        fixedCount++;
-        logReplacement(word, best, count);
-      }
-    }
-  }
-  if (fixedCount > 0) {
-    textEl.value = text;
-    commitHistory();
-    fit();
-    updateStats();
-    setStatus(`Бүх алдааг (${fixedCount}) эхний саналаар заслаа.`);
-    runCheck();
-  }
 }
 
 async function copyAll() {
@@ -516,86 +475,8 @@ function redo() {
   if (hIndex < history.length - 1) applyHistory(hIndex + 1);
 }
 
-// ===== File loading (.txt / .docx) =====
-// DOCX is a ZIP with word/document.xml inside. Browsers can inflate raw
-// deflate streams natively, so a minimal ZIP reader keeps this dependency-free.
-async function unzipEntry(buffer, entryName) {
-  const view = new DataView(buffer);
-  const bytes = new Uint8Array(buffer);
-  let eocd = -1;
-  for (let i = buffer.byteLength - 22; i >= Math.max(0, buffer.byteLength - 65557); i--) {
-    if (view.getUint32(i, true) === 0x06054b50) {
-      eocd = i;
-      break;
-    }
-  }
-  if (eocd < 0) throw new Error("not a zip archive");
-  const entryCount = view.getUint16(eocd + 10, true);
-  let offset = view.getUint32(eocd + 16, true);
-  for (let i = 0; i < entryCount; i++) {
-    if (view.getUint32(offset, true) !== 0x02014b50) break;
-    const method = view.getUint16(offset + 10, true);
-    const compressedSize = view.getUint32(offset + 20, true);
-    const nameLength = view.getUint16(offset + 28, true);
-    const extraLength = view.getUint16(offset + 30, true);
-    const commentLength = view.getUint16(offset + 32, true);
-    const localOffset = view.getUint32(offset + 42, true);
-    const name = new TextDecoder().decode(bytes.subarray(offset + 46, offset + 46 + nameLength));
-    if (name === entryName) {
-      const localNameLength = view.getUint16(localOffset + 26, true);
-      const localExtraLength = view.getUint16(localOffset + 28, true);
-      const start = localOffset + 30 + localNameLength + localExtraLength;
-      const data = bytes.subarray(start, start + compressedSize);
-      if (method === 0) return data;
-      if (method !== 8) throw new Error(`unsupported compression ${method}`);
-      const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
-      return new Uint8Array(await new Response(stream).arrayBuffer());
-    }
-    offset += 46 + nameLength + extraLength + commentLength;
-  }
-  throw new Error("word/document.xml not found");
-}
-
-async function docxToText(file) {
-  const xml = new TextDecoder().decode(await unzipEntry(await file.arrayBuffer(), "word/document.xml"));
-  const doc = new DOMParser().parseFromString(xml, "application/xml");
-  const paragraphs = [];
-  for (const p of doc.getElementsByTagName("w:p")) {
-    let text = "";
-    for (const t of p.getElementsByTagName("w:t")) text += t.textContent;
-    paragraphs.push(text);
-  }
-  return paragraphs.join("\n");
-}
-
-async function loadFile(file) {
-  if (!file) return;
-  try {
-    setStatus(`«${file.name}» уншиж байна…`);
-    let text;
-    if (/\.docx$/i.test(file.name)) {
-      text = await docxToText(file);
-    } else {
-      text = await file.text();
-    }
-    text = text.replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
-    if (!text) throw new Error("empty file");
-    commitHistory();
-    textEl.value = text;
-    commitHistory();
-    setStatus(`«${file.name}» ачааллаа.`);
-    fit();
-    updateStats();
-    runCheck();
-    textEl.focus();
-  } catch {
-    setStatus("Файлыг уншиж чадсангүй. Зөвхөн .txt, .docx файл дэмжинэ.", "error");
-  }
-}
 // ===== Menus =====
 function closeMenus() {
-  samplesMenu.hidden = true;
-  samplesBtn.setAttribute("aria-expanded", "false");
   settingsMenu.hidden = true;
   settingsBtn.setAttribute("aria-expanded", "false");
 }
@@ -605,34 +486,6 @@ function toggleMenu(menu, button) {
   closeMenus();
   menu.hidden = !willOpen;
   button.setAttribute("aria-expanded", String(willOpen));
-}
-
-function buildSamplesMenu() {
-  samplesMenu.textContent = "";
-  SAMPLES.forEach((sample, i) => {
-    const item = document.createElement("button");
-    item.type = "button";
-    item.className = "menu__item";
-    item.textContent = sample.label;
-    item.addEventListener("click", () => {
-      loadSample(i);
-      closeMenus();
-    });
-    samplesMenu.append(item);
-  });
-}
-
-function loadSample(index = 0) {
-  const sample = SAMPLES[index];
-  if (!sample) return;
-  commitHistory();
-  textEl.value = sample.text;
-  commitHistory();
-  setStatus("");
-  fit();
-  updateStats();
-  runCheck();
-  textEl.focus();
 }
 
 // ===== Theme =====
@@ -901,7 +754,6 @@ hoverCardEl.addEventListener("click", (event) => {
 checkBtn.addEventListener("click", explicitCheck);
 if (copyAllBtn) copyAllBtn.addEventListener("click", copyAll);
 if (downloadBtn) downloadBtn.addEventListener("click", downloadText);
-if (fixAllBtn) fixAllBtn.addEventListener("click", fixAll);
 
 clearBtn.addEventListener("click", () => {
   commitHistory();
@@ -914,11 +766,6 @@ clearBtn.addEventListener("click", () => {
   updateStats();
   paint();
   textEl.focus();
-});
-sampleBtn.addEventListener("click", () => loadSample(0));
-samplesBtn.addEventListener("click", (event) => {
-  event.stopPropagation();
-  toggleMenu(samplesMenu, samplesBtn);
 });
 settingsBtn.addEventListener("click", (event) => {
   event.stopPropagation();
@@ -959,22 +806,6 @@ clearHistoryBtn.addEventListener("click", () => {
   setStatus("Солилтын түүхийг цэвэрлэлээ.");
 });
 
-// File drop / picker.
-dropzone.addEventListener("dragover", (event) => {
-  event.preventDefault();
-  dropzone.classList.add("is-over");
-});
-dropzone.addEventListener("dragleave", () => dropzone.classList.remove("is-over"));
-dropzone.addEventListener("drop", (event) => {
-  event.preventDefault();
-  dropzone.classList.remove("is-over");
-  loadFile(event.dataTransfer?.files?.[0]);
-});
-fileInput.addEventListener("change", () => {
-  loadFile(fileInput.files?.[0]);
-  fileInput.value = "";
-});
-
 window.addEventListener("resize", () => {
   fit();
   hideHoverCard();
@@ -1010,7 +841,6 @@ function initLanding() {
 
 // ===== Init =====
 initLanding();
-buildSamplesMenu();
 initTheme();
 updateHistButtons();
 updateStats();
