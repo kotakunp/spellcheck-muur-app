@@ -167,6 +167,18 @@ check("the previous pin is released", (await page.locator(".pad__marks mark.is-p
 await page.keyboard.press("Escape");
 check("escape releases the pin", (await page.locator(".pad__marks mark.is-pinned").count()) === 0);
 
+// Re-checking must not tear the panel down: the same rows are reused, and only a
+// genuinely new word adds one. Rebuilding here made the section flash on every
+// keystroke.
+await page.evaluate(() => {
+  for (const row of document.querySelectorAll("#history-list > *")) row.dataset.tag = "keep";
+});
+await page.locator("#text").fill(`${SAMPLE_TEXT} Уланбаатар нэмэгдээ.`);
+await waitForFreshMarks();
+check("re-checking reuses the existing panel rows", (await page.evaluate(() => [...document.querySelectorAll("#history-list > *")].filter((r) => !r.dataset.tag).length)) === 0, await page.evaluate(() => [...document.querySelectorAll("#history-list > *")].map((r) => r.textContent)));
+check("the badge grows in place instead of a new row", (await page.locator("#history-list .errrow__count").first().textContent()) === "×2");
+check("no row re-runs its entry animation", (await page.locator("#history-list .is-new").count()) === 3, await page.locator("#history-list .is-new").count());
+
 // Repeated words get one row with an occurrence badge, not two rows.
 await page.locator("#clear-btn").click();
 await page.locator("#text").fill("Уланбаатар хот. Уланбаатар руу.");

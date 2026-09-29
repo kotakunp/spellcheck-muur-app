@@ -1450,7 +1450,10 @@ html {
   }
 }
 
-.histentry:first-child {
+/* Only rows that are genuinely new animate in — never the whole list, which
+   used to re-run this on every row every time the checker ran. */
+.histentry.is-new,
+.errrow.is-new {
   animation: hist-in 0.28s ease;
 }
 

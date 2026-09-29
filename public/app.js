@@ -170,9 +170,14 @@ function scheduleCheck() {
   debounce = setTimeout(runCheck, 400);
 }
 
-// After every check the fresh marks pop in with a short stagger.
+// After a check that flags something new, the fresh marks pop in with a short
+// stagger. Typing that leaves the flagged set alone must not blink the text.
+let lastFlagged = [];
 function flashResults() {
-  if (!misspellings.length) return;
+  const next = [...new Set(misspellings.map((word) => word.toLowerCase()))];
+  const added = next.some((word) => !lastFlagged.includes(word));
+  lastFlagged = next;
+  if (!added || !next.length) return;
   marksEl.classList.remove("just-checked");
   void marksEl.offsetWidth;
   marksEl.classList.add("just-checked");
@@ -269,7 +274,7 @@ function occurrenceCount(word) {
 }
 
 // A still-wrong word: click it to jump to the first occurrence.
-function buildErrorRow(word) {
+function buildErrorRow(word, count) {
   const row = document.createElement("button");
   row.type = "button";
   row.className = "errrow";
@@ -279,23 +284,69 @@ function buildErrorRow(word) {
   label.className = "errrow__word";
   label.textContent = word;
   row.append(label);
-  const n = occurrenceCount(word);
-  if (n > 1) {
-    const count = document.createElement("span");
-    count.className = "errrow__count";
-    count.textContent = `×${n}`;
-    row.append(count);
-  }
+  if (count > 1) row.append(buildOccurrenceBadge(count));
   return row;
 }
 
+function buildOccurrenceBadge(count) {
+  const badge = document.createElement("span");
+  badge.className = "errrow__count";
+  badge.textContent = `×${count}`;
+  return badge;
+}
+
 // The panel is one list: words that are still wrong first, then what each
-// replaced word became.
+// replaced word became. Checking runs on every pause while typing, so this
+// reconciles against the live DOM instead of rebuilding it — tearing the list
+// down each time made the whole section flash on every keystroke.
+const panelRows = new Map();
+
 function renderHistory() {
-  historyListEl.textContent = "";
-  emptyEl.hidden = misspellings.length > 0 || replaceLog.length > 0;
-  for (const word of misspellings) historyListEl.append(buildErrorRow(word));
-  for (let i = replaceLog.length - 1; i >= 0; i--) historyListEl.append(buildHistoryEntry(replaceLog[i]));
+  const entries = [];
+  for (const word of misspellings) {
+    const count = occurrenceCount(word);
+    entries.push({ key: `e:${word.toLowerCase()}`, word, count });
+  }
+  for (let i = replaceLog.length - 1; i >= 0; i--) {
+    const entry = replaceLog[i];
+    entries.push({ key: `f:${entry.from}:${entry.to}:${entry.count}:${entry.at}`, entry });
+  }
+
+  const wanted = new Set(entries.map((item) => item.key));
+  for (const [key, node] of panelRows) {
+    if (!wanted.has(key)) {
+      node.remove();
+      panelRows.delete(key);
+    }
+  }
+
+  let previous = null;
+  for (const item of entries) {
+    let node = panelRows.get(item.key);
+    if (!node) {
+      node = item.entry ? buildHistoryEntry(item.entry) : buildErrorRow(item.word, item.count);
+      // Only genuinely new rows animate in.
+      node.classList.add("is-new");
+      panelRows.set(item.key, node);
+    } else if (item.word) {
+      updateOccurrenceBadge(node, item.count);
+    }
+    const target = previous ? previous.nextSibling : historyListEl.firstChild;
+    if (node !== target) historyListEl.insertBefore(node, target);
+    previous = node;
+  }
+
+  emptyEl.hidden = entries.length > 0;
+}
+
+function updateOccurrenceBadge(row, count) {
+  const badge = row.querySelector(".errrow__count");
+  if (count > 1) {
+    if (badge) badge.textContent = `×${count}`;
+    else row.append(buildOccurrenceBadge(count));
+  } else if (badge) {
+    badge.remove();
+  }
 }
 
 // Clicking a still-wrong word pins the hover look onto that one exact
@@ -852,6 +903,9 @@ clearBtn.addEventListener("click", () => {
   commitHistory();
   setStatus("");
   misspellings = [];
+  // Clearing never runs a check, so reset the "what did we last flag" memory
+  // here or the next check would see nothing new and skip its pop-in.
+  lastFlagged = [];
   sessionSkipped.clear();
   fit();
   updateStats();
