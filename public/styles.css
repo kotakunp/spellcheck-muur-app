@@ -519,54 +519,33 @@ button {
 }
 
 /* ===== Actions row ===== */
-.actions {
-  display: flex;
-  align-items: stretch;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-/* The checker is the only action left, so it takes the full width of the
-   panel and reads as the primary call to action. */
-.actions .btn--primary {
-  flex: 1 1 auto;
-  padding: 15px 24px;
-  font-size: 16px;
-  font-weight: 600;
-  position: relative;
-  overflow: hidden;
-}
-
-/* While a check is in flight the button swaps its sparkle for a spinner, so the
-   press is acknowledged even on a slow server. */
-.check__spinner {
-  display: none;
-  width: 15px;
-  height: 15px;
-  border: 2px solid currentColor;
-  border-right-color: transparent;
-  border-radius: 50%;
-  animation: check-spin 0.7s linear infinite;
+/* Live error count. Checking is automatic, so this pill is how the user knows
+   a check just ran and how much is left to fix. */
+.errcount {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   flex: none;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--red-tint);
+  color: var(--red-ink);
+  border: 1px solid var(--red-edge);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  animation: errcount-pop 0.3s cubic-bezier(0.2, 0.8, 0.3, 1);
 }
 
-#check-btn.is-checking .check__spinner {
-  display: block;
-}
-
-#check-btn.is-checking .ic,
-#check-btn.is-checking .btn__label {
+.errcount[hidden] {
   display: none;
 }
 
-#check-btn:disabled {
-  opacity: 1;
-  cursor: progress;
-}
-
-@keyframes check-spin {
-  to {
-    transform: rotate(360deg);
+@keyframes errcount-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
   }
 }
 
@@ -891,6 +870,52 @@ button {
   padding: 8px 10px;
   font-size: 13px;
   color: var(--muted);
+}
+
+/* The one moment between pointing at a word and seeing its candidates: a
+   shimmering placeholder holds the card's shape so nothing jumps. */
+.rank__hint--loading {
+  position: relative;
+  overflow: hidden;
+  color: transparent;
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.rank__hint--loading::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--line), transparent);
+  animation: rank-shimmer 1s ease-in-out infinite;
+}
+
+@keyframes rank-shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* Candidates fade up one after another as the card fills. */
+.rank--in .rank__item {
+  animation: rank-in 0.22s ease-out backwards;
+}
+
+.rank--in .rank__item:nth-child(1) { animation-delay: 0ms; }
+.rank--in .rank__item:nth-child(2) { animation-delay: 26ms; }
+.rank--in .rank__item:nth-child(3) { animation-delay: 52ms; }
+.rank--in .rank__item:nth-child(4) { animation-delay: 78ms; }
+.rank--in .rank__item:nth-child(5) { animation-delay: 104ms; }
+.rank--in .rank__item:nth-child(6) { animation-delay: 130ms; }
+
+@keyframes rank-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
 }
 
 .rank__item {

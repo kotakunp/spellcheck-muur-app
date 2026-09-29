@@ -102,6 +102,7 @@ check("reading time stat is gone", (await page.locator("#stat-reading").count())
 check("no dropzone or file picker", (await page.locator("#dropzone, #file-input").count()) === 0);
 check("no samples controls", (await page.locator("#samples-btn, #sample-btn, #samples-menu").count()) === 0);
 check("no fix all button", (await page.locator("#fix-all-btn").count()) === 0);
+check("no check button at all", (await page.locator("#check-btn, .actions").count()) === 0);
 check("format bar shows four tools", (await page.locator("#formatbar .fmtbtn").count()) === 4);
 const padBox0 = await page.locator("#pad").boundingBox();
 const fmtBox0 = await page.locator("#formatbar").boundingBox();
@@ -122,22 +123,35 @@ check("all misspellings are tinted at once", tintedCount === marks.length, { tin
 check("hover card hidden until hovered", await page.locator("#hover-card").isHidden());
 await shot("02-flagged.png");
 
-// ===== Hover before checking: card only, no fetch, prompt instead of candidates =====
+// ===== Hover fetches its own candidates, one request per word =====
 const typo = "Уланбаатар";
+const SUGGEST_URL = "**/cms-client/modules/spellchecker/suggest";
+await page.route(SUGGEST_URL, async (route) => {
+  await new Promise((r) => setTimeout(r, 600));
+  await route.continue();
+});
+const beforeHover = suggestCount;
 await hoverMark(page.locator(".pad__marks mark").first());
-check("hover opens the card without checking", await page.locator("#hover-card").isVisible());
-check("hover without checking offers no candidates", (await page.locator("#hover-card .rank__item").count()) === 0);
-check("hover prompts to run the checker", /Алдаа шалгах/.test(await page.locator("#hover-card .rank__hint").textContent()));
-check("no suggestion request fires on hover alone", suggestCount === 0, suggestCount);
+check("hover opens the card immediately", await page.locator("#hover-card").isVisible());
+check("hover shows a loading state while it fetches", /Санал хайж байна/.test(await page.locator("#hover-card .rank__hint").textContent()));
+check("loading state is styled as a shimmer", (await page.locator("#hover-card .rank__hint--loading").count()) === 1);
+check("no candidates yet while loading", (await page.locator("#hover-card .rank__item").count()) === 0);
+await page.waitForSelector("#hover-card .rank__item", { timeout: 8000 });
+check("hover fetches exactly one request for the word", suggestCount === beforeHover + 1, suggestCount - beforeHover);
+check("hover never fires parallel suggestion requests", maxInflight <= 1, maxInflight);
+check("candidates fade in once loaded", (await page.locator("#hover-card .rank--in .rank__item").count()) > 0);
+check("loading state is cleared after the fetch", (await page.locator("#hover-card .rank__hint--loading").count()) === 0);
+
+// A second hover of the same word comes from the cache.
 await page.mouse.move(4, 4);
 await page.waitForTimeout(450);
-check("prompt card closes when the pointer leaves", await page.locator("#hover-card").isHidden());
+check("card closes when the pointer leaves", await page.locator("#hover-card").isHidden());
+await hoverMark(page.locator(".pad__marks mark").first());
+await page.waitForSelector("#hover-card .rank__item", { timeout: 8000 });
+check("a second hover is served from the cache, with no new request", suggestCount === beforeHover + 1, suggestCount - beforeHover);
+await page.unroute(SUGGEST_URL);
 
-// ===== Алдаа шалгах fetches the candidates; hover then opens them instantly =====
-await page.locator("#check-btn").click();
-await hoverFirstMark();
-check("check button fetches suggestions", suggestCount > 0, suggestCount);
-check("suggestions are fetched one at a time", maxInflight <= 1, maxInflight);
+// ===== Ranked candidates, highlight and the rest of the hover card =====
 check("hover opens the suggestion card", await page.locator("#hover-card").isVisible());
 check("hover highlights every occurrence of the word", (await page.locator(".pad__marks mark.is-hover").count()) >= 1);
 const rankItems = await page.locator("#hover-card .rank__item").allTextContents();
@@ -146,6 +160,9 @@ const topCandidate = await page.locator("#hover-card .rank__word").first().textC
 const topRankNo = await page.locator("#hover-card .rank__no").first().textContent();
 check("top candidate is ranked first", topRankNo === "1" && topCandidate === "Улаанбаатар", { topRankNo, topCandidate });
 check("hover card shows nothing but the candidate list and actions", (await page.locator("#hover-card .card__explain, #hover-card .rank__hint").count()) === 0);
+// The tint has a 0.12s transition, so let it settle before comparing colours —
+// a cache-hit hover can land within that window of a repaint.
+await page.waitForTimeout(250);
 check("hover word gets the stronger tint", (await page.evaluate(() => {
   const m = document.querySelector(".pad__marks mark.is-hover");
   const n = document.querySelector(".pad__marks mark:not(.is-hover)");
@@ -266,7 +283,21 @@ check("clear resets stats", (await page.locator("#stat-words").textContent()) ==
 check("empty state reflects empty history", await page.locator("#empty").isVisible());
 await shot("08-cleared.png");
 
-// ===== Check feedback: spinner, pad sweep, staggered marks, result count =====
+// ===== Automatic check feedback: live count + staggered marks =====
+await page.locator("#clear-btn").click();
+await page.locator("#text").fill(SAMPLE_TEXT);
+await page.waitForSelector(".pad__marks mark", { timeout: 8000 });
+check("error count pill appears after an automatic check", await page.locator("#err-count").isVisible());
+check("error count names the flagged words", (await page.locator("#err-count").textContent()) === "3 алдаа", await page.locator("#err-count").textContent());
+check("error count equals the number of marks", (await page.locator("#err-count").textContent()) === `${(await page.locator(".pad__marks mark").count())} алдаа`);
+check("marks pop in after checking", (await page.locator("#backdrop.just-checked mark").count()) > 0);
+check("marks carry a stagger index", ((await page.locator("#backdrop mark").first().getAttribute("style")) || "").includes("--i:"));
+await shot("15-check-feedback.png");
+await page.locator("#clear-btn").click();
+await page.waitForTimeout(400);
+check("error count pill hides once the text is clean", await page.locator("#err-count").isHidden());
+
+// ===== Cmd/Ctrl+Enter: sweep the pad and report the count =====
 const CHECK_URL = "**/cms-client/modules/spellchecker/check";
 await page.route(CHECK_URL, async (route) => {
   await new Promise((r) => setTimeout(r, 600));
@@ -275,32 +306,25 @@ await page.route(CHECK_URL, async (route) => {
 await page.locator("#text").fill(SAMPLE_TEXT);
 await page.waitForSelector(".pad__marks mark", { timeout: 8000 });
 await page.waitForTimeout(900);
-await page.locator("#check-btn").click();
-check("check button shows a spinner while checking", await page.locator("#check-btn .check__spinner").isVisible());
-check("check button is disabled while checking", await page.locator("#check-btn").isDisabled());
-check("editor shows the scanning sweep while checking", (await page.locator(".editor.is-scanning").count()) === 1);
-check("sweep layer exists on the pad", (await page.locator(".pad").count()) === 1);
+await page.locator("#text").click();
+await page.keyboard.press("ControlOrMeta+Enter");
+check("shortcut shows the scanning sweep", (await page.locator(".editor.is-scanning").count()) === 1);
 await page.waitForFunction(() => !document.querySelector(".editor.is-scanning"), null, { timeout: 10000 });
-await page.waitForSelector("#check-btn:not(.is-checking)", { timeout: 10000 });
-check("check button re-enables when done", !(await page.locator("#check-btn").isDisabled()));
-check("spinner hidden when done", await page.locator("#check-btn .check__spinner").isHidden());
-check("label returns after the check", await page.locator("#check-btn .btn__label").isVisible());
-check("marks pop in after checking", (await page.locator("#backdrop.just-checked mark").count()) > 0);
-check("marks carry a stagger index", ((await page.locator("#backdrop mark").first().getAttribute("style")) || "").includes("--i:"));
-check("status reports how many errors were found", /3 алдаа олдлоо/.test(await page.locator("#status").textContent()), await page.locator("#status").textContent());
-await shot("15-check-feedback.png");
+check("shortcut clears the sweep when done", (await page.locator(".editor.is-scanning").count()) === 0);
+check("shortcut reports how many errors were found", /3 алдаа олдлоо/.test(await page.locator("#status").textContent()), await page.locator("#status").textContent());
 await page.unroute(CHECK_URL);
 
 // A clean document reports no errors.
 await page.locator("#text").fill("Монгол хэл сайхан бичигдсэн байна.");
 await page.waitForTimeout(900);
-await page.locator("#check-btn").click();
-await page.waitForSelector("#check-btn:not(.is-checking)", { timeout: 10000 });
+check("clean text shows no error count", await page.locator("#err-count").isHidden());
+await page.locator("#text").click();
+await page.keyboard.press("ControlOrMeta+Enter");
+await page.waitForTimeout(800);
 check("clean text reports no errors", /Алдаа олдсонгүй/.test(await page.locator("#status").textContent()), await page.locator("#status").textContent());
 
 // ===== Replacement history clears on demand =====
 await page.locator("#text").fill("Энд улаанбатар гэсэн алдаа байна.");
-await page.locator("#check-btn").click();
 await hoverFirstMark();
 await pickRank(1);
 await page.waitForTimeout(900);
@@ -316,10 +340,9 @@ await page.locator("#text").fill("Энэ өгүүлбэрт улаанбатар
 await page.waitForSelector(".pad__marks mark", { timeout: 8000 });
 check("typing auto-checks the text", (await page.locator(".pad__marks mark").count()) > 0);
 const typedWord = await page.locator(".pad__marks mark").first().textContent();
-await page.locator("#check-btn").click();
 await hoverFirstMark();
 const typedBest = await page.locator("#hover-card .rank__word").first().textContent();
-check("checking offers ranked candidates", typedBest.length > 0 && typedBest.toLowerCase() !== typedWord.toLowerCase(), { typedWord, typedBest });
+check("hovering offers ranked candidates", typedBest.length > 0 && typedBest.toLowerCase() !== typedWord.toLowerCase(), { typedWord, typedBest });
 await pickRank(1);
 await page.waitForTimeout(900);
 const typedFixed = await textValue();
@@ -330,7 +353,6 @@ check("replacement status names both words", (await page.locator("#status").text
 await page.locator("#text").fill("Уланбаатар хот. УЛАНБААТАР руу. уланбаатар руу.");
 await page.waitForSelector(".pad__marks mark", { timeout: 8000 });
 check("repeated typo yields three marks", (await page.locator(".pad__marks mark").count()) === 3);
-await page.locator("#check-btn").click();
 await hoverFirstMark();
 await pickRank(1);
 await page.waitForTimeout(900);
@@ -343,23 +365,28 @@ check("no marks left once every occurrence is fixed", (await page.locator(".pad_
 check("history records the whole replacement with a count", (await page.locator("#history-list .histentry__count").first().textContent()) === "×3", await page.locator("#history-list .histentry__count").first().textContent());
 await shot("09-casing.png");
 
-// ===== Large document: checking alone and hover alone never touch /suggest =====
-const typoWord = "Уланбаатар";
-const bigText = Array.from({ length: 30 }, (_, i) => `Өгүүлбэр ${i + 1}: ${typoWord} хотод морь унаа байна.`).join("\n");
+// ===== Large document: 30 copies of one word cost exactly one request =====
+const typoWord = "хүүнтэй";
+const bigText = Array.from({ length: 30 }, (_, i) => `Өгүүлбэр ${i + 1}: ${typoWord} ${typoWord === "хүүнтэй" ? "хот" : "байна"} бичигдсэн.`).join("\n");
 const beforeBig = suggestCount;
 await page.locator("#text").fill(bigText);
 await page.waitForSelector(".pad__marks mark", { timeout: 15000 });
 await page.waitForTimeout(1200);
 check("every occurrence of the repeated typo is highlighted", (await page.locator(".pad__marks mark").count()) === 30);
-check("auto-check fires no suggestion requests", suggestCount === beforeBig, suggestCount - beforeBig);
+check("auto-check still fires no suggestion requests", suggestCount === beforeBig, suggestCount - beforeBig);
+check("error count reports one error, not thirty", (await page.locator("#err-count").textContent()) === "1 алдаа", await page.locator("#err-count").textContent());
+
+// First hover of this word costs a single request, not one per occurrence.
 await hoverMark(page.locator(".pad__marks mark").first());
-check("hover fires no suggestion request", suggestCount === beforeBig, suggestCount - beforeBig);
-check("cached candidates appear on hover without a fetch", (await page.locator("#hover-card .rank__item").count()) > 0);
+check("hovering a 30-times-repeated word costs one request", suggestCount === beforeBig + 1, suggestCount - beforeBig);
+await page.waitForSelector("#hover-card .rank__item", { timeout: 8000 });
+check("candidates appear for the repeated word", (await page.locator("#hover-card .rank__item").count()) > 0);
 await page.mouse.move(4, 4);
 await page.waitForTimeout(450);
-await page.locator("#check-btn").click();
+await hoverMark(page.locator(".pad__marks mark").nth(5));
+await page.waitForSelector("#hover-card .rank__item", { timeout: 8000 });
+check("hovering another occurrence is cached, with no new request", suggestCount === beforeBig + 1, suggestCount - beforeBig);
 await hoverFirstMark();
-check("candidates open from the cache after checking, with no new requests", suggestCount === beforeBig, suggestCount - beforeBig);
 await pickRank(1);
 await page.waitForTimeout(1200);
 const bigAfter = await textValue();

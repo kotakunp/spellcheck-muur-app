@@ -88,6 +88,8 @@
                     <span id="stat-sentences">0 өгүүлбэр</span>
                   </div>
 
+                  <span class="errcount" id="err-count" role="status" hidden></span>
+
                   <button type="button" class="tool-btn tool-btn--ghost" id="copy-all-btn" title="Бүх текстийг хуулах">
                     <svg class="ic ic--16" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                     Хуулах
@@ -111,7 +113,7 @@
                     autocomplete="off"
                     autocapitalize="off"
                     aria-label="Шалгах текст"
-                    placeholder="Энд монгол үгсээ бичээд, алдаагаа шалгаарай. Эсвэл доорх талбарт файл чирж оруулаарай."
+                    placeholder="Энд монгол үгсээ бичээд, алдаагаа шалгаарай. Бичсэн чинь алдаатай үгс шууд тэмдэглэгдэнэ."
                   ></textarea>
                 </div>
 
@@ -121,14 +123,6 @@
                   <button type="button" class="fmtbtn" data-case="lower">бүгд жижиг</button>
                   <button type="button" class="fmtbtn" data-case="sentence">Өгүүлбэрийн хэлбэр</button>
                   <button type="button" class="fmtbtn" data-case="title">Үг бүрийн эх үсэг</button>
-                </div>
-
-                <div class="actions">
-                  <button type="button" class="btn btn--primary" id="check-btn">
-                    <svg class="ic ic--16" viewBox="0 0 24 24"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z" /></svg>
-                    <span class="btn__label">Алдаа шалгах</span>
-                    <span class="check__spinner" aria-hidden="true"></span>
-                  </button>
                 </div>
 
                 <p class="status" id="status" role="status"></p>
@@ -210,7 +204,7 @@
             <span class="step__no">1</span>
             <div>
               <h3 class="step__title">Текстээ оруул</h3>
-              <p class="step__text">Бичээд, бэлэн бичвэрээ шууд нийтлээрэй — дараа нь <strong>Алдаа шалгах</strong>-ыг дарна уу.</p>
+              <p class="step__text">Бичээд, бэлэн бичвэрээ шууд нийтлээрэй. Бих бүрд алдаатай үгс шууд тэмдэглэгдэнэ.</p>
             </div>
           </li>
           <li class="step reveal" style="--d: 0.1s">

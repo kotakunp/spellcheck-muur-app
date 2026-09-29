@@ -6,10 +6,10 @@ const statusEl = document.getElementById("status");
 const statWordsEl = document.getElementById("stat-words");
 const statCharsEl = document.getElementById("stat-chars");
 const statSentencesEl = document.getElementById("stat-sentences");
+const errCountEl = document.getElementById("err-count");
 const copyAllBtn = document.getElementById("copy-all-btn");
 const downloadBtn = document.getElementById("download-btn");
 const clearBtn = document.getElementById("clear-btn");
-const checkBtn = document.getElementById("check-btn");
 const undoBtn = document.getElementById("undo-btn");
 const redoBtn = document.getElementById("redo-btn");
 const emptyEl = document.getElementById("empty");
@@ -33,7 +33,6 @@ let ignored = new Set(readStored());
 let sessionSkipped = new Set();
 let misspellings = [];
 let replaceLog = [];
-let checking = false;
 let requestId = 0;
 let debounce = null;
 let statusIsError = false;
@@ -135,6 +134,14 @@ function paint() {
   const flagged = new Set(misspellings.map((word) => word.toLowerCase()));
   paintMarks(value, flagged);
   marksEl.classList.remove("just-checked");
+  // Checking is automatic, so the live count is the standing proof that a check
+  // ran. Every repaint keeps it honest (skip, dictionary, undo, clear).
+  if (misspellings.length) {
+    errCountEl.textContent = `${formatNum(misspellings.length)} алдаа`;
+    errCountEl.hidden = false;
+  } else {
+    errCountEl.hidden = true;
+  }
 }
 
 function markAt(x, y) {
@@ -146,15 +153,17 @@ function markAt(x, y) {
   return null;
 }
 // ===== Checking =====
-function setChecking(on) {
-  checking = on;
-  checkBtn.classList.toggle("is-checking", on);
-  checkBtn.disabled = on;
-}
-
 function scheduleCheck() {
   clearTimeout(debounce);
   debounce = setTimeout(runCheck, 400);
+}
+
+// After every check the fresh marks pop in with a short stagger.
+function flashResults() {
+  if (!misspellings.length) return;
+  marksEl.classList.remove("just-checked");
+  void marksEl.offsetWidth;
+  marksEl.classList.add("just-checked");
 }
 
 async function runCheck() {
@@ -164,13 +173,12 @@ async function runCheck() {
   if (!value.trim()) {
     requestId++;
     misspellings = [];
-    setChecking(false);
     setStatus("");
     paint();
+    flashResults();
     return;
   }
   const id = ++requestId;
-  setChecking(true);
   try {
     const res = await fetch(`${API}/check`, {
       method: "POST",
@@ -181,16 +189,29 @@ async function runCheck() {
     const data = await res.json();
     if (id !== requestId) return;
     misspellings = data.filter((word) => !ignored.has(word.toLowerCase()) && !sessionSkipped.has(word.toLowerCase()));
-    setChecking(false);
     // A successful check clears a stale connection error but keeps info messages
     // describing what just happened.
     if (statusIsError) setStatus("");
     paint();
+    flashResults();
   } catch {
     if (id !== requestId) return;
-    setChecking(false);
     setStatus("Шалгаж чадсангүй. Серверт холбогдохгүй байна.", "error");
   }
+}
+
+// Cmd/Ctrl+Enter: re-check right away and say so. Suggestions are no longer
+// primed here — the hover card fetches them on demand.
+async function forceCheck() {
+  // Remove + reflow restarts the sweep even on back-to-back presses.
+  editorEl.classList.remove("is-scanning");
+  void editorEl.offsetWidth;
+  editorEl.classList.add("is-scanning");
+  await runCheck();
+  editorEl.classList.remove("is-scanning");
+  if (statusIsError) return;
+  if (misspellings.length) setStatus(`${formatNum(misspellings.length)} алдаа олдлоо.`);
+  else if (textEl.value.trim()) setStatus("Алдаа олдсонгүй.");
 }
 
 // ===== Replacement history =====
@@ -232,11 +253,11 @@ function renderHistory() {
 }
 // ===== Suggestions =====
 // Suggestions are fetched ONLY when the user explicitly runs the checker
-// («Алдаа шалгах» or ⌘/Ctrl + ↵). Hover and tap read the cache and never send
-// a request; in-flight fetches are deduplicated, and the explicit check primes
-// words one at a time so a document with hundreds of errors stays gentle.
+// Suggestions are fetched when a word is hovered or tapped. The bounded cache
+// keeps repeat hovers instant and the in-flight map deduplicates concurrent
+// requests for the same word, so a document with hundreds of errors only ever
+// costs one request per word the user actually points at.
 const pendingSuggestions = new Map();
-let primePromise = null;
 
 async function loadSuggestions(word) {
   if (suggestionCache.has(word)) return suggestionCache.get(word);
@@ -262,31 +283,6 @@ async function loadSuggestions(word) {
   return request;
 }
 
-// Explicit check: sweep the pad, re-check, report the count, then fetch
-// candidates for every flagged word so the hover card opens instantly.
-function explicitCheck() {
-  const run = (async () => {
-    // Remove + reflow restarts the sweep even on back-to-back checks.
-    editorEl.classList.remove("is-scanning");
-    void editorEl.offsetWidth;
-    editorEl.classList.add("is-scanning");
-    await runCheck();
-    editorEl.classList.remove("is-scanning");
-    if (misspellings.length) {
-      marksEl.classList.remove("just-checked");
-      void marksEl.offsetWidth;
-      marksEl.classList.add("just-checked");
-      setStatus(`${formatNum(misspellings.length)} алдаа олдлоо.`);
-    } else if (textEl.value.trim()) {
-      setStatus("Алдаа олдсонгүй.");
-    }
-    for (const word of [...new Set(misspellings)]) await loadSuggestions(word);
-  })();
-  primePromise = run;
-  run.then(() => {
-    if (primePromise === run) primePromise = null;
-  });
-}
 
 // ===== Replacing =====
 function applyCasing(source, target) {
@@ -594,10 +590,7 @@ async function fillHoverCard(word) {
   const render = (suggestions) => {
     if (token !== hoverToken || hoverCardEl.hidden) return;
     list.textContent = "";
-    if (suggestions === null) {
-      hint.textContent = "«Алдаа шалгах»-ыг дарна уу — санал ачаалаагүй байна.";
-      list.append(hint);
-    } else if (!suggestions.length) {
+    if (!suggestions.length) {
       hint.textContent = "Санал олдсонгүй.";
       list.append(hint);
     } else {
@@ -615,27 +608,25 @@ async function fillHoverCard(word) {
         item.append(no, label);
         list.append(item);
       });
+      // Candidates arrive with a short stagger, the same way marks pop in.
+      if (token === hoverToken) list.classList.add("rank--in");
     }
     if (hoverRect && !hoverCardEl.hidden) placeHoverCard(hoverRect);
   };
 
-  // Instant path: the explicit check already cached this word.
+  // Cache hit: instant, no request. Otherwise fetch once on demand —
+  // loadSuggestions dedupes in-flight requests and remembers the answer, so a
+  // second hover on the same word is instant too.
   if (suggestionCache.has(word)) {
     render(suggestionCache.get(word));
     return;
   }
-
-  // Hover never fetches. Wait only on requests an explicit check already
-  // started; with nothing in flight, point the user at «Алдаа шалгах».
-  const inFlight = pendingSuggestions.get(word) || primePromise;
-  if (!inFlight) {
-    render(null);
-    return;
-  }
   hint.textContent = "Санал хайж байна…";
-  await inFlight;
+  hint.classList.add("rank__hint--loading");
+  const suggestions = await loadSuggestions(word);
   if (token !== hoverToken || hoverCardEl.hidden) return;
-  render(suggestionCache.has(word) ? suggestionCache.get(word) : null);
+  hint.classList.remove("rank__hint--loading");
+  render(suggestions);
 }
 
 function showHoverFor(mark) {
@@ -751,7 +742,6 @@ hoverCardEl.addEventListener("click", (event) => {
   hideHoverCard();
 });
 
-checkBtn.addEventListener("click", explicitCheck);
 if (copyAllBtn) copyAllBtn.addEventListener("click", copyAll);
 if (downloadBtn) downloadBtn.addEventListener("click", downloadText);
 
@@ -782,7 +772,7 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closeMenus();
   if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
     event.preventDefault();
-    explicitCheck();
+    forceCheck();
   }
 });
 
