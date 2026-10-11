@@ -100,10 +100,9 @@ function updateStats() {
 }
 
 // ===== Layout =====
+// The textarea fills the pad via CSS; only the backdrop needs to make room
+// for the textarea's scrollbar so wrapped lines break at the same place.
 function fit() {
-  textEl.style.height = "0px";
-  const limit = Math.max(340, Math.round(window.innerHeight * 0.6));
-  textEl.style.height = `${Math.min(textEl.scrollHeight, limit)}px`;
   const scrollbar = textEl.offsetWidth - textEl.clientWidth;
   marksEl.style.paddingRight = "";
   const base = parseFloat(getComputedStyle(marksEl).paddingRight) || 0;
@@ -279,7 +278,7 @@ function buildErrorRow(word, count) {
   row.type = "button";
   row.className = "errrow";
   row.dataset.word = word;
-  row.title = "Текст дэх үсгийг руу очих";
+  row.title = "Текст дэх байрлал руу очих";
   const label = document.createElement("span");
   label.className = "errrow__word";
   label.textContent = word;
@@ -383,7 +382,6 @@ function unpinMark() {
   pinnedMark = null;
 }
 // ===== Suggestions =====
-// Suggestions are fetched ONLY when the user explicitly runs the checker
 // Suggestions are fetched when a word is hovered or tapped. The bounded cache
 // keeps repeat hovers instant and the in-flight map deduplicates concurrent
 // requests for the same word, so a document with hundreds of errors only ever
@@ -499,11 +497,11 @@ async function pasteFromClipboard() {
   try {
     text = await navigator.clipboard.readText();
   } catch {
-    setStatus("Хувийн ойг уншиж чадсангүй. ⌘/Ctrl + V дараад бичнэ үү.", "error");
+    setStatus("Санах ойг уншиж чадсангүй. ⌘/Ctrl + V дарж буулгана уу.", "error");
     return;
   }
   if (!text) {
-    setStatus("Хувийн ойн хоосон байна.");
+    setStatus("Санах ой хоосон байна.");
     return;
   }
   const start = textEl.selectionStart ?? textEl.value.length;
@@ -511,7 +509,7 @@ async function pasteFromClipboard() {
   commitHistory();
   textEl.setRangeText(text, start, end, "end");
   commitHistory();
-  setStatus("Хувийн ойноос буулгалаа.");
+  setStatus("Санах ойноос буулгалаа.");
   fit();
   updateStats();
   runCheck();
@@ -959,36 +957,7 @@ window.addEventListener("resize", () => {
   hideHoverCard();
 });
 
-// ===== Landing =====
-function initLanding() {
-  const nav = document.getElementById("nav");
-  if (nav) {
-    const onScroll = () => nav.classList.toggle("is-scrolled", window.scrollY > 8);
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-  }
-
-  const revealables = [...document.querySelectorAll(".reveal")];
-  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (!("IntersectionObserver" in window) || reduced) {
-    revealables.forEach((el) => el.classList.add("is-visible"));
-  } else {
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue;
-          entry.target.classList.add("is-visible");
-          io.unobserve(entry.target);
-        }
-      },
-      { threshold: 0.12, rootMargin: "0px 0px -40px 0px" }
-    );
-    revealables.forEach((el) => io.observe(el));
-  }
-}
-
 // ===== Init =====
-initLanding();
 initTheme();
 updateHistButtons();
 updateStats();

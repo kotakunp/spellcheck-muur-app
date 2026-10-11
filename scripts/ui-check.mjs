@@ -86,22 +86,21 @@ const pickRank = (n = 1) => page.locator("#hover-card .rank__item").nth(n - 1).c
 
 await page.goto(BASE, { waitUntil: "networkidle" });
 
-// ===== Landing: single page hosts both marketing and the live app =====
-check("hero headline rendered", (await page.locator(".hero__title").textContent()) === "Алдаа шалгагч");
-check("nav CTA present", await page.locator("#nav-cta").isVisible());
-check("feature cards render", (await page.locator(".feat").count()) === 6);
-check("how-it-works steps render", (await page.locator(".step").count()) === 3);
-check("footer rendered", (await page.locator(".foot").count()) === 1);
-check("app lives inside the landing page", (await page.locator('#app #text').count()) === 1);
-await shot("00-hero.png");
-
-// Nav CTA smooth-scrolls down to the embedded app.
-await page.locator("#nav-cta").click();
-await page.waitForTimeout(1200);
-check("nav CTA scrolls the app into view", await page.evaluate(() => {
-  const r = document.getElementById("text").getBoundingClientRect();
-  return r.top > -120 && r.top < window.innerHeight;
+// ===== Single screen: the tool is the whole page, nothing to scroll to =====
+check("brand rendered", (await page.locator(".brand__title").textContent()) === "Алдаа шалгагч");
+check("no marketing sections", (await page.locator(".hero, #features, #how, .cta, .feat, .step").count()) === 0);
+check("credit line rendered", (await page.locator(".foot").count()) === 1);
+check("app is the page", (await page.locator("#app #text").count()) === 1);
+const screenFit = await page.evaluate(() => ({
+  scroll: document.documentElement.scrollHeight,
+  view: window.innerHeight,
+  textTop: document.getElementById("text").getBoundingClientRect().top,
+  footBottom: document.querySelector(".foot").getBoundingClientRect().bottom,
 }));
+check("desktop page does not scroll", screenFit.scroll <= screenFit.view + 1, screenFit);
+check("editor and credits fit in the first screen", screenFit.textTop < 140 && screenFit.footBottom <= screenFit.view + 1, screenFit);
+check("editor is focused on load", await page.evaluate(() => document.activeElement?.id === "text"));
+await shot("00-hero.png");
 
 // ===== Empty state: no cards anywhere, replacement history empty =====
 check("empty state visible", await page.locator("#empty").isVisible());
@@ -152,7 +151,12 @@ check("the pinned mark is the clicked word", (await page.locator(".pad__marks ma
 check("the pin looks like the hover state", await page.evaluate(() => {
   const p = document.querySelector(".pad__marks mark.is-pinned");
   const n = document.querySelector(".pad__marks mark:not(.is-pinned)");
-  return getComputedStyle(p).backgroundColor === "rgba(212, 58, 47, 0.22)" && getComputedStyle(p).backgroundColor !== getComputedStyle(n).backgroundColor;
+  const probe = document.createElement("mark");
+  probe.className = "is-hover";
+  p.parentElement.append(probe);
+  const hoverBg = getComputedStyle(probe).backgroundColor;
+  probe.remove();
+  return getComputedStyle(p).backgroundColor === hoverBg && hoverBg !== getComputedStyle(n).backgroundColor;
 }));
 check("the pin does not fade away on its own", await page.evaluate(async () => {
   await new Promise((r) => setTimeout(r, 1800));
@@ -595,24 +599,14 @@ check("pasted text lands in the panel", (await page.locator("#history-list .errr
 check("paste reports in the status", /буулгалаа/.test(await page.locator("#status").textContent()), await page.locator("#status").textContent());
 check("paste is undoable", await page.locator("#undo-btn").isEnabled());
 
-// ===== Landing sections reveal on scroll =====
-await page.locator("#features").scrollIntoViewIfNeeded();
-await page.waitForTimeout(1100);
-check("landing sections reveal on scroll", (await page.locator(".reveal.is-visible").count()) > 0);
-check("all six feature cards are revealed", (await page.locator(".feat.is-visible").count()) === 6, await page.locator(".feat.is-visible").count());
-await shot("14-features.png");
-await page.locator(".foot").scrollIntoViewIfNeeded();
-await page.waitForTimeout(800);
-check("footer GitHub link visible", await page.locator(".foot__gh").isVisible());
-
-// Sweep the whole page so every reveal fires before the full-page screenshot.
-await page.evaluate(async () => {
-  for (let y = 0; y < document.body.scrollHeight; y += 500) {
-    window.scrollTo(0, y);
-    await new Promise((r) => setTimeout(r, 40));
-  }
-});
-await page.waitForTimeout(500);
+check("source link visible in the credit line", await page.locator('.foot a[href*="github.com/kotakunp"]').isVisible());
+check("a long document still keeps the page from scrolling", await page.evaluate(async () => {
+  const el = document.getElementById("text");
+  el.value = Array.from({ length: 200 }, (_, i) => `Мөр ${i + 1}.`).join("\n");
+  el.dispatchEvent(new Event("input"));
+  await new Promise((r) => setTimeout(r, 100));
+  return document.documentElement.scrollHeight <= window.innerHeight + 1 && el.scrollHeight > el.clientHeight;
+}));
 
 // ===== Responsive: mobile layout keeps the panel usable =====
 await page.locator("#text").fill("Монгол улс нь Уланбаатар хоттой, хүүнтэй орон.");
