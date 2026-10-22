@@ -2,7 +2,6 @@
 # Nixpacks file docs: https://nixpacks.com/docs/configuration/file
 
 [variables]
-NIXPACKS_NODE_VERSION = "22"
 
 # Production-only install: skips the Playwright dev dependency (its browser
 # download would bloat or break the image build). The root postinstall
@@ -14,3 +13,13 @@ cmds = ["npm ci --omit=dev --no-audit --no-fund"]
 # graceful-shutdown handler (no npm wrapper process in between).
 [start]
 cmd = "node server.js"
+
+# Node comes from the official nodejs.org release (checksum-verified), not
+# Nixpacks' pinned nixpkgs, which lags Node security releases. To update
+# Node, change V below and redeploy.
+[phases.setup]
+nixPkgs = []
+aptPkgs = ["curl", "xz-utils", "ca-certificates"]
+cmds = [
+  'set -e; V=22.23.4; A=$(uname -m | sed -e s/x86_64/x64/ -e s/aarch64/arm64/); F=node-v$V-linux-$A.tar.xz; cd /tmp; curl -fsSLO https://nodejs.org/dist/v$V/$F; curl -fsSL https://nodejs.org/dist/v$V/SHASUMS256.txt | grep " $F$" | sha256sum -c -; tar -xJf $F -C /usr --strip-components=1 --exclude=CHANGELOG.md --exclude=LICENSE --exclude=README.md; rm $F; node -v',
+]
